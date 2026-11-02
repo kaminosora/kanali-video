@@ -150,7 +150,7 @@ class GeometryTests(unittest.TestCase):
             p, q, r = positions[triangle]
             self.assertLess(np.cross(q - p, r - p)[1], 0)
         for key, value in mesh.items():
-            self.assertIsInstance(value, dict if key == "config" else list)
+            self.assertIsInstance(value, dict if key in ("config", "brightness_summary") else list)
         json.dumps(mesh, allow_nan=False)
 
     def test_pan_sign_and_zoom_scale_source_coordinates(self):

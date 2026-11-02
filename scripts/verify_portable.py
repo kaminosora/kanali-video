@@ -17,6 +17,24 @@ ROOT=Path(__file__).resolve().parents[1]
 CLIENT=build_opener(ProxyHandler({}))
 
 
+def brightness_samples(frame, width=2160, height=1080):
+    """Sample neutral patches from a decoded top-down RGB24 delivery frame."""
+    assert len(frame)==width*height*3,('Incomplete decoded RGB24 frame',len(frame))
+    samples={}
+    for name,x in (('left',32),('center',width//2),('right',width-33)):
+        y=height//2
+        pixels=[frame[(row*width+column)*3:(row*width+column)*3+3]
+                for row in range(y-3,y+4) for column in range(x-3,x+4)]
+        samples[name]=[round(sum(pixel[channel] for pixel in pixels)/len(pixels),3) for channel in range(3)]
+    # The exported texture must dim the curved centre, while leaving the wings
+    # near 128. Accidentally exporting gain*angular_response would dim both and
+    # fail the side samples and the required centre-to-side difference.
+    for name,expected in (('center',113),('left',128),('right',128)):
+        assert all(abs(value-expected)<=3 for value in samples[name]),samples
+    assert max(samples['center'])<min(samples['left']+samples['right'])-8,samples
+    return samples
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--folder',required=True,type=Path)
@@ -54,6 +72,7 @@ def main():
                 time.sleep(.25)
             else:raise TimeoutError('Portable panel did not become ready')
             assert Path(state['output_dir']).resolve()==folder/'outputs',state['output_dir']
+            assert state['defaults']['brightness_enabled'] is False,state['defaults']
             environment_result=api('/api/environment')
             assert environment_result['python']['bundled']
             configured=api('/api/settings',json.loads(args.settings.read_text(encoding='utf-8')))
@@ -64,13 +83,17 @@ def main():
             estimate=api('/api/estimate',dict(source_id=source['id'],start=0,end=60,fps=30,quality='high'))
             assert estimate['frames']==1800 and estimate['limit_bytes']==500_000_000
             video=api('/api/import',{'path':str(folder/'examples'/'motion-demo.mp4')})
+            gray=api('/api/brightness-calibration',{})
             results=[]
-            cases=[(source,'auto','auto'),(source,'blender','libx264'),(video,'auto','auto')]
+            cases=[(source,'auto','auto',False),(source,'blender','libx264',False),(video,'auto','auto',False)]
             if caps['encoders'].get('h264_amf',{}).get('available'):
-                cases.append((video,'auto','h264_amf'))
-            for media,renderer,encoder in cases:
-                job=api('/api/render',dict(source_id=media['id'],config=state['defaults'],
-                    start=0,end=.2,fps=30,quality='high',supersample=1,name='portable-'+renderer,
+                cases.append((video,'auto','h264_amf',False))
+            cases.extend(((gray,'gpu','auto',True),(gray,'blender','libx264',True)))
+            for media,renderer,encoder,brightness_enabled in cases:
+                config=dict(state['defaults'],brightness_enabled=brightness_enabled)
+                job=api('/api/render',dict(source_id=media['id'],config=config,
+                    start=0,end=.2,fps=30,quality='high',supersample=1,
+                    name='portable-'+renderer+('-brightness' if brightness_enabled else ''),
                     renderer=renderer,encoder=encoder))
                 deadline=time.monotonic()+180
                 while time.monotonic()<deadline:
@@ -78,6 +101,9 @@ def main():
                     if current['status'] not in {'queued','preparing','rendering','encoding'}:break
                     time.sleep(.4)
                 assert current['status']=='completed',current
+                assert current['total_frames']==6,current
+                if brightness_enabled:
+                    assert current['backend']['renderer']==renderer,current['backend']
                 output=Path(current['output_path']).resolve()
                 assert output.is_relative_to(folder/'outputs')
                 assert 0<output.stat().st_size<500_000_000
@@ -87,9 +113,18 @@ def main():
                     encoding='utf-8',errors='replace',timeout=30,creationflags=flags)
                 assert decoded.returncode==0,decoded.stderr[-1500:]
                 assert 'sar:1/1 s:2160x1080' in decoded.stderr,decoded.stderr[-2500:]
+                assert 'DAR 2:1' in decoded.stderr,decoded.stderr[-2500:]
+                gray_samples=None
+                if brightness_enabled:
+                    first_frame=subprocess.run([configured['tools']['ffmpeg']['path'],'-hide_banner','-nostdin',
+                        '-i',str(output),'-frames:v','1','-pix_fmt','rgb24','-f','rawvideo','pipe:1'],
+                        capture_output=True,timeout=30,creationflags=flags)
+                    assert first_frame.returncode==0,first_frame.stderr.decode('utf-8',errors='replace')[-1500:]
+                    gray_samples=brightness_samples(first_frame.stdout)
                 results.append(dict(source_kind=media['kind'],renderer=current['backend']['renderer'],encoder=current['backend']['encoder'],
                                     size_bytes=output.stat().st_size,frames=current['total_frames'],
-                                    width=2160,height=1080,sar='1:1',dar='2:1'))
+                                    width=2160,height=1080,sar='1:1',dar='2:1',
+                                    brightness_enabled=brightness_enabled,gray_samples=gray_samples))
             report={'version':state['version'],'bundled_python':True,'system_python_path_removed':True,
                     'relocated_unicode_space_directory':True,'media_bootstrap':True,'estimate':estimate,'exports':results}
             (folder/'acceptance.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')

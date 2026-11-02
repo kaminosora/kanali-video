@@ -46,14 +46,26 @@ def emission_material(name, image, frames, uv_name, decoration_path=None, source
         mix = nodes.new("ShaderNodeMixRGB"); mix.blend_type = "MIX"
         links.new(texture.outputs["Alpha"], mix.inputs[0])
         links.new(decoration.outputs["Color"], mix.inputs[1]); links.new(texture.outputs["Color"], mix.inputs[2])
-        links.new(mix.outputs[0], emission.inputs["Color"])
+        source_color = mix.outputs[0]
     else:
-        links.new(texture.outputs["Color"], emission.inputs["Color"])
+        source_color = texture.outputs["Color"]
+    # FLOAT_COLOR stores this scalar in linear light. Apply it after the source
+    # and standee frame are composed, before Standard converts linear to sRGB.
+    gain = nodes.new("ShaderNodeAttribute"); gain.attribute_name = "BrightnessGain"
+    gain.label = "Experimental angular brightness gain (linear)"
+    gain.location = (-80, -520)
+    multiply = nodes.new("ShaderNodeMixRGB"); multiply.blend_type = "MULTIPLY"
+    multiply.inputs[0].default_value = 1
+    multiply.use_clamp = False
+    multiply.location = (140, 0)
+    links.new(source_color, multiply.inputs[1])
+    links.new(gain.outputs["Color"], multiply.inputs[2])
+    links.new(multiply.outputs[0], emission.inputs["Color"])
     links.new(emission.outputs[0], output.inputs["Surface"])
     return material
 
 
-def mesh_object(scene, name, vertices, triangles, panel_uv, source_uv, material):
+def mesh_object(scene, name, vertices, triangles, panel_uv, source_uv, material, brightness_gain):
     data = bpy.data.meshes.new(name)
     data.from_pydata(vertices, [], triangles)
     data.update()
@@ -62,6 +74,8 @@ def mesh_object(scene, name, vertices, triangles, panel_uv, source_uv, material)
         for loop in data.loops:
             layer.data[loop.index].uv = coordinates[loop.vertex_index]
     data.uv_layers.active = data.uv_layers["SourceUV"]
+    gain = data.color_attributes.new(name="BrightnessGain", type="FLOAT_COLOR", domain="POINT")
+    gain.data.foreach_set("color", [component for value in brightness_gain for component in (value, value, value, 1)])
     obj = bpy.data.objects.new(name, data)
     scene.collection.objects.link(obj)
     obj.data.materials.append(material)
@@ -124,16 +138,20 @@ def build(settings):
     setup_scene(atlas, *render_size(scale), options)
     aspect = ASPECT
     vertices = [((u-.5)*aspect, v-.5, 0) for u, v in mesh["atlas"]]
-    mesh_object(atlas, "Unfolded_Pixel_Surface", vertices, mesh["triangles"], mesh["atlas"], mesh["uv"], material)
+    mesh_object(atlas, "Unfolded_Pixel_Surface", vertices, mesh["triangles"], mesh["atlas"], mesh["uv"], material,
+                mesh["brightness_gain"])
     camera = add_camera(atlas, "Export_Orthographic", (0, 0, 3))
     camera.data.type, camera.data.sensor_fit, camera.data.ortho_scale = "ORTHO", "HORIZONTAL", aspect
     eye, right, up, normal = camera_basis(config)
     bounds = mesh["bounds"]
-    for name, mat in (("02_TARGET_Corrected", material), ("03_TARGET_Uncorrected", uncorrected)):
+    simulated_gain = [gain * response for gain, response in zip(mesh["brightness_gain"], mesh["angular_response"])]
+    for name, mat, gains in (("02_TARGET_Corrected", material, mesh["brightness_gain"]),
+                             ("03_TARGET_Uncorrected", uncorrected, mesh["brightness_gain"]),
+                             ("04_TARGET_Simulated", material, simulated_gain)):
         scene = bpy.data.scenes.new(name)
         setup_scene(scene, 1400, 1000, options)
         mesh_object(scene, "Curved_Screen_mm", [[c*.001 for c in p] for p in mesh["positions"]],
-                    mesh["triangles"], mesh["atlas"], mesh["uv"], mat)
+                    mesh["triangles"], mesh["atlas"], mesh["uv"], mat, gains)
         cam = add_camera(scene, "Target_Eye", [c*.001 for c in eye])
         cam.rotation_euler = (-cam.location).to_track_quat("-Z", "Y").to_euler()
         view_width = max(bounds[2]-bounds[0], (bounds[3]-bounds[1])*1.4) * 1.15
@@ -141,10 +159,13 @@ def build(settings):
         cam.data.lens = config["view_distance_mm"] * 36 / view_width
         cam.data.sensor_width = 36
     atlas["mapping_config_json"] = json.dumps(config, ensure_ascii=False)
-    atlas["instructions"] = "01 exports the unfolded texture; 02/03 compare it from the design eye. SourceUV is projected; PanelUV is arc length."
+    atlas["brightness_summary_json"] = json.dumps(mesh["brightness_summary"], ensure_ascii=False)
+    atlas["instructions"] = "01 exports the unfolded texture; 02/03 compare geometry from the design eye; 04 simulates angular panel luminance and is not exported."
     text = bpy.data.texts.new("READ_ME")
     text.write("PANORAMA Mapper\n\n01_EXPORT_Unfolded is the delivery texture, not a photograph of the cooler.\n"
                "02_TARGET_Corrected and 03_TARGET_Uncorrected compare the viewing result.\n"
+               "BrightnessGain is a linear scalar applied to video AND decoration in 01/02/03.\n"
+               "04_TARGET_Simulated additionally applies the empirical angular response; this is a model, not a panel measurement.\n"
                "Standard / emission preserve the source appearance. Both UV layers are explicit.\n"
                "Rebuild mesh after geometry or viewing changes using the local panel.\n\n" + json.dumps(settings, ensure_ascii=False, indent=2))
     for screen in bpy.data.screens:

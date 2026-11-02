@@ -23,7 +23,7 @@ from mapper.paths import app_root, worker_command
 
 ROOT = app_root()
 sys.path.insert(0, str(ROOT / ".deps"))
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 LOGGER = logging.getLogger("panorama.server")
 LOGGER.addHandler(logging.NullHandler())
 CLIENT_DISCONNECTS = (ConnectionAbortedError, ConnectionResetError, BrokenPipeError)
@@ -192,6 +192,13 @@ class Application:
         path.parent.mkdir(exist_ok=True)
         if not path.exists():
             create_calibration(path)
+        return self.import_source(path)
+
+    def brightness_calibration(self):
+        from mapper.media import create_brightness_calibration
+        path = self.cache / "brightness-gray-128.png"
+        if not path.exists():
+            create_brightness_calibration(path)
         return self.import_source(path)
 
 
@@ -373,6 +380,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.json(self.app.import_source(chosen) if chosen else {"cancelled": True})
             elif self.path == "/api/calibration":
                 self.json(self.app.calibration())
+            elif self.path == "/api/brightness-calibration":
+                self.json(self.app.brightness_calibration())
             elif self.path == "/api/mesh":
                 config = normalize_config(data.get("config", {}))
                 mesh = mapping_mesh(config, data.get("source_aspect", 16/9))

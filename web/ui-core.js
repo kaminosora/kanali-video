@@ -44,6 +44,19 @@
     activeStandee(config) {
       return config.fit === 'contain' && config.presentation === 'standee';
     },
+    brightnessOptions(config = {}) {
+      const value = (key, fallback, min, max) => typeof config[key] === 'number' && Number.isFinite(config[key])
+        ? Math.max(min, Math.min(max, config[key])) : fallback;
+      return {brightness_enabled:config.brightness_enabled === true,
+        brightness_floor:value('brightness_floor',.6,0,1),
+        brightness_power:value('brightness_power',2,.25,8),
+        brightness_strength:value('brightness_strength',1,0,1)};
+    },
+    brightnessSummaryLabel(summary) {
+      if (!summary) return '调整后显示视角范围、预测亮度与补偿倍率。';
+      const angle = n => Number(n).toFixed(1), percent = n => `${(Number(n)*100).toFixed(1)}%`;
+      return `视角 ${angle(summary.angle_min_deg)}°–${angle(summary.angle_max_deg)}°\n预测亮度 ${percent(summary.response_min)}–${percent(summary.response_max)}\n${summary.enabled ? '补偿倍率' : '补偿未开启 · 倍率'} ${percent(summary.gain_min)}–${percent(summary.gain_max)}`;
+    },
     newestJobs(jobs) {
       return [...jobs].sort((a,b)=>(b.created || 0)-(a.created || 0));
     },

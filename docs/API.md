@@ -14,12 +14,13 @@ POST /api/import {path:string} -> Source. Reads chosen local source, never overw
 POST /api/pick {} -> Source or {cancelled:true}. Native Windows file picker. Polling remains available.
 POST /api/upload raw binary, X-Filename: encodeURIComponent(filename) -> Source. Use XMLHttpRequest upload progress if desired; project input cache holds copy.
 POST /api/calibration {} -> Source (built-in labeled grid image).
+POST /api/brightness-calibration {} -> Source (built-in full-frame neutral RGB(128,128,128) PNG, 2160×1080, 2:1). The 128 values are encoded 8-bit SDR values, not 50% linear luminance. Imports this image as the current source; use cover framing for a full-screen calibration export, then reimport the original video after calibration.
 GET /media/<source_id>/preview, /media/<source_id>/thumbnail. Supports video Range requests. Use URLs in Source directly.
 
 ## Geometry and presets
 
 POST /api/mesh {config,source_aspect:number} -> {config,mesh,decoration_url:null|string}.
-mesh = {positions:[[x,y,z],...], atlas:[[u,v],...], uv:[[u,v],...], projected:[[x,y],...], triangles:[[a,b,c],...], boundary_uv:[[u,v],...], bounds:[xmin,ymin,xmax,ymax]}.
+mesh = {positions:[[x,y,z],...], atlas:[[u,v],...], uv:[[u,v],...], projected:[[x,y],...], triangles:[[a,b,c],...], boundary_uv:[[u,v],...], bounds:[xmin,ymin,xmax,ymax], brightness_gain:[number,...], angular_response:[number,...], brightness_summary:BrightnessSummary}.
 All UVs use v-up. Canvas source overlays need y=1-v. WebGL source texture must align with these UVs explicitly. Draw corrected preview using projected positions + uv; comparison preview uses projected positions + atlas. Unfolded output preview uses atlas positions + uv. Source sampling outside [0,1] must be black, not clamped/repeated. mesh can have >65535 vertices, use uint or default small enough.
 
 POST /api/preset {name:string,config} -> {name,config}. Saves project-local presets; existing preset explicitly named is replaced.
@@ -41,10 +42,26 @@ Default config and allowed values:
 | zoom | 1 | proportional image enlargement |
 | pan_x | 0 | image translation in projected bounding-width units, positive right |
 | pan_y | 0 | image translation in projected bounding-height units, positive up |
+| brightness_enabled | false | strict JSON boolean; apply experimental attenuation to previews and exports |
+| brightness_floor | 0.6 | finite number in [0,1]; relative luminance limit approaching a 90° grazing view |
+| brightness_power | 2.0 | finite number in [0.25,8]; angular-response curve exponent |
+| brightness_strength | 1.0 | finite number in [0,1]; 0 is no compensation, 1 is full compensation |
 
 UI should label azimuth45 as corner bisector, elevation10 as provisional. Recommend ranges azimuth15..75, elevation-20..35, distance250..2000, bend0..110, curve2..40, zoom0.25..4, pan +/-1. Backend normalizes/rejects out-of-range values. Geometry POST debounced 120ms; ignore out-of-order responses. On source import auto-fit; preserve geometry calibration, reset zoom/pan.
 
 Cover framing is constrained: zoom>=1, pan clamped to available crop margin. Returned config and mesh.config are the effective parameters. Standee contains the entire extended decoration domain U=[-.15/aspect,1+.15/aspect], V=[-.30,1.14], with 1% safety inset. Both renderers sample the same PNG decoration outside source UV[0,1]. Switching either mode resets zoom/pan.
+
+### Experimental angular brightness (v1.2.0)
+
+Missing brightness keys use the defaults above, so older presets leave compensation disabled. Numeric strings, booleans in numeric fields, non-finite values and out-of-range brightness values are rejected. The 0.6 floor and exponent 2 are unmeasured experimental starting points, not a TRYX measurement or a universal AMOLED law. See [brightness model and calibration](BRIGHTNESS.md).
+
+`brightness_gain` and `angular_response` each contain one scalar per `positions` entry, in the same vertex order. `angular_response` is the modeled screen response `A = floor + (1-floor) * mu^power`, where `mu` is the clamped cosine between the outward screen normal and the local direction to the configured eye. It remains available when compensation is disabled, allowing a model-only preview. `brightness_gain` is the attenuation `g = 1 + effective_strength * (R/A - 1)`, with effective strength zero when disabled. Gains never exceed 1. Apply the interpolated gain to **linear RGB after compositing the source and standee decoration**, then encode the output color.
+
+`R` is the minimum angular response at the current screen's four physical corners. For the supported convex extruded profile and valid front-facing eye positions this is the exact darkest response over the whole surface, independent of source crop, framing, mesh resolution and frame content. It is not recomputed from image pixels. Implementations guard division by zero and clamp the ratio to at most 1.
+
+`BrightnessSummary = {angle_min_deg,angle_max_deg,response_min,response_max,gain_min,gain_max,target_response,enabled,floor,power,strength}`. Angles are measured from the local normal: 0° is face-on, 90° is grazing. `response_min` and `target_response` both equal `R`; `gain_max` is 1. `response_max` and `angle_min_deg` use a fixed 2049-sample arc reference at the closest vertical screen position for UI estimates; this sampling does not determine `R`. `gain_min` is the corresponding estimated attenuation minimum. `enabled`, `floor`, `power` and `strength` echo the validated settings, with the configured strength retained even when disabled.
+
+The observer preview has a separate, UI-only model-simulation toggle that multiplies by `angular_response` in linear light. It is not a config/export field, is not saved with presets, and never adds screen attenuation to the exported video. The unfolded preview always shows the actual preprocessed pixels, using `brightness_gain` only. At full strength, the model predicts `A*g = R`; apparent uniformity in this simulation does not establish uniformity on a real panel. Actual calibration uses the neutral-gray source on the physical display.
 
 ## Export
 

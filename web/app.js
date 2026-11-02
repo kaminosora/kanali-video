@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
-  const { fitRect, uvToCanvas, meshUVSpan, trimRange, trimDraft, zoomForFit, decorationDomain, frameForMode, activeStandee, newestJobs, jobFeedback, elapsedLabel, exportTrim, renderPreferences, estimateLabel, jobResultLabel, accelerationLabel } = window.PanoramaUI;
+  const { fitRect, uvToCanvas, meshUVSpan, trimRange, trimDraft, zoomForFit, decorationDomain, frameForMode, activeStandee, brightnessOptions, brightnessSummaryLabel, newestJobs, jobFeedback, elapsedLabel, exportTrim, renderPreferences, estimateLabel, jobResultLabel, accelerationLabel } = window.PanoramaUI;
   const video = $('source-video'), image = $('source-image');
   const activeStates = new Set(['queued', 'preparing', 'rendering', 'encoding']);
   const parameters = [
@@ -12,7 +12,10 @@
     ['screen_height_mm', '有效高度', 'mm', 30, 200, 0.1, 'screen-controls'],
     ['screen_width_mm', '展开宽度', 'mm', 60, 400, 0.1, 'screen-controls'],
     ['bend_deg', '两翼弯折', '°', 0, 110, 1, 'screen-controls'],
-    ['curve_length_mm', 'G2 过渡弧长', 'mm', 2, 40, 0.5, 'screen-controls']
+    ['curve_length_mm', 'G2 过渡弧长', 'mm', 2, 40, 0.5, 'screen-controls'],
+    ['brightness_floor', '90° 掠射相对亮度', '%', 0, 100, 1, 'brightness-controls', 100],
+    ['brightness_power', '衰减曲线指数', '', 0.25, 8, 0.05, 'brightness-controls'],
+    ['brightness_strength', '补偿强度', '%', 0, 100, 1, 'brightness-controls', 100]
   ];
   let config = {}, defaults = {}, source = null, mesh = null, sessionToken = '', presetNames = [];
   let comparison = 'corrected', overlayVisible = true, importing = false, submitting = false;
@@ -24,6 +27,8 @@
   let capabilitiesState = null, capabilitiesPending = false, capabilitiesPath = null, capabilitiesRequested = false;
   let estimateTimer, estimateSerial = 0, previousQuality = 'high', highPreferences = {renderer:'auto',encoder:'auto'};
   let outputProfile = {width:2160,height:1080,aspect:2,label:'KANALI 2:1'};
+  // This is an observer-only display option; never persist or send it as render config.
+  let simulateAngle = false;
 
   function applyOutputProfile(value) {
     const valid = value && Number.isSafeInteger(value.width) && value.width > 0 && Number.isSafeInteger(value.height) && value.height > 0;
@@ -56,7 +61,7 @@
     return `${String(minutes).padStart(2, '0')}:${remain}`;
   }
   function buildControls() {
-    for (const [key, label, unit, min, max, step, parent] of parameters) {
+    for (const [key, label, unit, min, max, step, parent, displayScale = 1] of parameters) {
       const field = document.createElement('div'); field.className = 'parameter';
       const head = document.createElement('div'); head.className = 'parameter-head';
       const title = document.createElement('label'); title.textContent = label; title.htmlFor = `number-${key}`;
@@ -68,18 +73,21 @@
       const limits = document.createElement('div'); limits.className = 'range-labels';
       const lo = document.createElement('span'), hi = document.createElement('span'); lo.textContent = `${min} ${unit}`; hi.textContent = `${max} ${unit}`; limits.append(lo, hi);
       field.append(head, range, limits); $(parent).append(field);
-      range.addEventListener('input', () => { config[key] = Number(range.value); number.value = range.value; scheduleMesh(); });
+      range.addEventListener('input', () => { config[key] = Number(range.value) / displayScale; number.value = range.value; scheduleMesh(); });
       number.addEventListener('change', () => {
         if (!Number.isFinite(Number(number.value)) || number.value === '') return syncControls();
-        config[key] = Math.max(min, Math.min(max, Number(number.value))); syncControls(); scheduleMesh();
+        config[key] = Math.max(min, Math.min(max, Number(number.value))) / displayScale; syncControls(); scheduleMesh();
       });
     }
   }
   function syncControls() {
-    for (const [key] of parameters) {
+    config = { ...config, ...brightnessOptions(config) };
+    for (const [key, , , , , , , displayScale = 1] of parameters) {
       if (config[key] === undefined) continue;
-      $(`number-${key}`).value = Number(Number(config[key]).toFixed(4)); $(`range-${key}`).value = config[key];
+      $(`number-${key}`).value = Number((config[key] * displayScale).toFixed(4)); $(`range-${key}`).value = config[key] * displayScale;
     }
+    $('brightness-enabled').checked = config.brightness_enabled;
+    $('brightness-summary').textContent = brightnessSummaryLabel(mesh && mesh.brightness_summary);
     $('zoom').value = Number(Number(config.zoom || 1).toFixed(3));
     $('zoom').min = config.fit === 'cover' ? '1' : '0.25';
     $('framing-note').textContent = config.fit === 'cover'
@@ -145,14 +153,23 @@
         if (!gl.getShaderParameter(result, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(result));
         return result;
       };
-      const vert = shader(gl.VERTEX_SHADER, 'attribute vec2 aPosition;attribute vec2 aUV;uniform vec2 uScale;varying vec2 vUV;void main(){vUV=aUV;gl_Position=vec4(aPosition*uScale,0.,1.);}');
+      const vert = shader(gl.VERTEX_SHADER, 'attribute vec2 aPosition;attribute vec2 aUV;attribute float aGain;attribute float aResponse;uniform vec2 uScale;varying vec2 vUV;varying float vGain;varying float vResponse;void main(){vUV=aUV;vGain=aGain;vResponse=aResponse;gl_Position=vec4(aPosition*uScale,0.,1.);}');
       const frag = shader(gl.FRAGMENT_SHADER, `
         precision mediump float;
         varying vec2 vUV;
+        varying float vGain;
+        varying float vResponse;
         uniform sampler2D uSource;
         uniform sampler2D uDecoration;
         uniform bool uStandee;
+        uniform bool uSimulateAngle;
         uniform vec4 uDecorationDomain;
+        vec3 srgbToLinear(vec3 color) {
+          return mix(color / 12.92, pow((color + .055) / 1.055, vec3(2.4)), step(vec3(.04045), color));
+        }
+        vec3 linearToSrgb(vec3 color) {
+          return mix(color * 12.92, 1.055 * pow(color, vec3(1. / 2.4)) - .055, step(vec3(.0031308), color));
+        }
         void main() {
           vec3 color = vec3(0.);
           if (uStandee) {
@@ -162,6 +179,9 @@
           }
           if (vUV.x >= 0. && vUV.x <= 1. && vUV.y >= 0. && vUV.y <= 1.)
             color = texture2D(uSource, vUV).rgb;
+          float factor = clamp(vGain * (uSimulateAngle ? vResponse : 1.), 0., 1.);
+          // Identity is deliberately bit-preserving when both controls are off.
+          if (factor < 1.) color = linearToSrgb(srgbToLinear(color) * factor);
           gl_FragColor = vec4(color, 1.);
         }
       `);
@@ -169,8 +189,11 @@
       if (!gl.getProgramParameter(this.program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(this.program));
       gl.deleteShader(vert); gl.deleteShader(frag); gl.useProgram(this.program);
       this.positionBuffer = gl.createBuffer(); this.uvBuffer = gl.createBuffer();
+      this.gainBuffer = gl.createBuffer(); this.responseBuffer = gl.createBuffer();
       this.position = gl.getAttribLocation(this.program, 'aPosition'); this.uv = gl.getAttribLocation(this.program, 'aUV'); this.scale = gl.getUniformLocation(this.program, 'uScale');
+      this.gain = gl.getAttribLocation(this.program, 'aGain'); this.response = gl.getAttribLocation(this.program, 'aResponse');
       this.standeeUniform = gl.getUniformLocation(this.program, 'uStandee');
+      this.simulateAngleUniform = gl.getUniformLocation(this.program, 'uSimulateAngle');
       this.decorationDomainUniform = gl.getUniformLocation(this.program, 'uDecorationDomain');
       this.texture = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, this.texture);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -195,15 +218,21 @@
       const coordinates = this.unfolded || comparison === 'corrected' ? data.uv : data.atlas;
       // Deindexing also supports meshes above WebGL1's unsigned-short index limit.
       const position = new Float32Array(data.triangles.length * 6), uv = new Float32Array(position.length);
+      const gain = new Float32Array(position.length / 2), response = new Float32Array(position.length / 2);
       let offset = 0;
       for (const triangle of data.triangles) for (const index of triangle) {
         position[offset] = 2 * (points[index][0] - bounds[0]) / width - 1;
         position[offset + 1] = 2 * (points[index][1] - bounds[1]) / height - 1;
-        uv[offset] = coordinates[index][0]; uv[offset + 1] = coordinates[index][1]; offset += 2;
+        uv[offset] = coordinates[index][0]; uv[offset + 1] = coordinates[index][1];
+        gain[offset / 2] = data.brightness_gain ? data.brightness_gain[index] : 1;
+        response[offset / 2] = data.angular_response ? data.angular_response[index] : 1;
+        offset += 2;
       }
       this.count = position.length / 2;
       gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer); gl.bufferData(gl.ARRAY_BUFFER, position, gl.STATIC_DRAW);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.uvBuffer); gl.bufferData(gl.ARRAY_BUFFER, uv, gl.STATIC_DRAW); this.draw();
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.uvBuffer); gl.bufferData(gl.ARRAY_BUFFER, uv, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.gainBuffer); gl.bufferData(gl.ARRAY_BUFFER, gain, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.responseBuffer); gl.bufferData(gl.ARRAY_BUFFER, response, gl.STATIC_DRAW); this.draw();
     }
     upload(media) {
       const gl = this.gl;
@@ -231,9 +260,10 @@
       const fitted = fitRect(width, height, this.aspect);
       gl.useProgram(this.program); gl.uniform2f(this.scale, fitted.width / width * .92, fitted.height / height * .92);
       gl.uniform1i(this.standeeUniform, this.standee && this.hasDecoration ? 1 : 0);
+      gl.uniform1i(this.simulateAngleUniform, !this.unfolded && simulateAngle ? 1 : 0);
       gl.uniform4fv(this.decorationDomainUniform, this.decorationDomain);
-      for (const [buffer, attribute] of [[this.positionBuffer, this.position], [this.uvBuffer, this.uv]]) {
-        gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.enableVertexAttribArray(attribute); gl.vertexAttribPointer(attribute, 2, gl.FLOAT, false, 0, 0);
+      for (const [buffer, attribute, size] of [[this.positionBuffer, this.position, 2], [this.uvBuffer, this.uv, 2], [this.gainBuffer, this.gain, 1], [this.responseBuffer, this.response, 1]]) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.enableVertexAttribArray(attribute); gl.vertexAttribPointer(attribute, size, gl.FLOAT, false, 0, 0);
       }
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.texture);
       gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.decorationTexture);
@@ -304,7 +334,7 @@
   }
   function busyImport(value, label = '') {
     importing = value; $('import-status').hidden = !value; $('import-status').querySelector('span').textContent = label;
-    for (const id of ['pick-file', 'import-path', 'calibration', 'empty-import']) $(id).disabled = value;
+    for (const id of ['pick-file', 'import-path', 'calibration', 'brightness-calibration', 'empty-import']) $(id).disabled = value;
     updateRenderButton();
   }
   async function importRequest(path, body) {
@@ -561,6 +591,9 @@
     $('import-path').onclick = action(() => { const path = $('source-path').value.trim(); if (!path) throw new Error('请输入素材的本地绝对路径。'); return importRequest('/api/import', { path }); });
     $('source-path').addEventListener('keydown', event => { if (event.key === 'Enter') $('import-path').click(); });
     $('calibration').onclick = action(() => importRequest('/api/calibration', {}));
+    $('brightness-calibration').onclick = action(() => importRequest('/api/brightness-calibration', {}));
+    $('brightness-enabled').onchange = () => { config.brightness_enabled = $('brightness-enabled').checked; scheduleMesh(true); };
+    $('simulate-angle').onchange = () => { simulateAngle = $('simulate-angle').checked; for (const view of glViews) if (!view.unfolded) view.draw(); };
     $('drop-zone').onclick = () => { if (!importing) $('file-input').click(); };
     $('drop-zone').onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); $('drop-zone').click(); } };
     $('file-input').onchange = () => { uploadFile($('file-input').files[0]); $('file-input').value = ''; };
@@ -581,11 +614,11 @@
     document.querySelectorAll('[data-fit]').forEach(button => { button.onclick = () => { config = frameForMode(config, button.dataset.fit); syncControls(); scheduleMesh(); }; });
     $('zoom').onchange = () => { config.zoom = zoomForFit($('zoom').value, config.fit); syncControls(); scheduleMesh(); };
     $('reset-frame').onclick = () => { config.zoom = 1; config.pan_x = 0; config.pan_y = 0; syncControls(); scheduleMesh(true); };
-    $('reset-geometry').onclick = () => { config = { ...defaults }; syncControls(); scheduleMesh(true); };
+    $('reset-geometry').onclick = () => { config = { ...defaults, ...brightnessOptions(config) }; syncControls(); scheduleMesh(true); };
     $('toggle-overlay').onclick = () => { overlayVisible = !overlayVisible; $('toggle-overlay').classList.toggle('active', overlayVisible); $('toggle-overlay').setAttribute('aria-pressed', String(overlayVisible)); drawOverlay(); };
     document.querySelectorAll('[data-mode]').forEach(button => { button.onclick = () => {
       comparison = button.dataset.mode; document.querySelectorAll('[data-mode]').forEach(item => item.classList.toggle('active', item === button));
-      $('comparison-caption').textContent = comparison === 'corrected' ? '● 预变形后，从设定视点观看的效果' : '未做预变形，直接播放原画面的曲面效果';
+      $('comparison-caption').textContent = comparison === 'corrected' ? '● 几何预变形后，从设定视点观看的效果' : '未做几何预变形，亮度补偿仍按实验开关应用';
       if (mesh) for (const view of glViews) view.setMesh(mesh, config);
     }; });
     const overlay = $('source-overlay');

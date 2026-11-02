@@ -132,9 +132,12 @@ def probe_gpu() -> dict:
 _VERTEX_SHADER = '''#version 330
 in vec2 atlas;
 in vec2 source;
+in float brightness_gain;
 out vec2 uv;
+out float gain;
 void main() {
     uv = source;
+    gain = brightness_gain;
     // OpenGL readback starts at its bottom row. Flip raster placement, leaving
     // SourceUV v-up, so returned bytes are top-down without a CPU array flip.
     gl_Position = vec4(2.0 * atlas.x - 1.0, 1.0 - 2.0 * atlas.y, 0.0, 1.0);
@@ -147,6 +150,7 @@ uniform sampler2D decoration_texture;
 uniform bool has_decoration;
 uniform float source_aspect;
 in vec2 uv;
+in float gain;
 out vec4 color;
 
 vec3 to_srgb(vec3 x) {
@@ -181,7 +185,9 @@ void main() {
         vec4 decoration = sample_cubic(decoration_texture, decoration_uv);
         background = decoration.rgb * decoration.a;
     }
-    color = vec4(to_srgb(mix(background, source.rgb, source.a)), 1.0);
+    // The calibrated scalar acts on linear light after composition, including
+    // the standee frame. Never multiply encoded sRGB or brighten black pixels.
+    color = vec4(to_srgb(mix(background, source.rgb, source.a) * gain), 1.0);
 }
 '''
 
@@ -220,10 +226,14 @@ class GpuMapper:
             self._output = context.texture((self.width, self.height), 3, dtype='f1')
             self._framebuffer = context.framebuffer([self._output])
             self._program = context.program(vertex_shader=_VERTEX_SHADER, fragment_shader=_FRAGMENT_SHADER)
-            vertices = np.concatenate((np.asarray(mesh['atlas'], dtype='f4'), np.asarray(mesh['uv'], dtype='f4')), axis=1)
+            vertices = np.concatenate((np.asarray(mesh['atlas'], dtype='f4'),
+                                       np.asarray(mesh['uv'], dtype='f4'),
+                                       np.asarray(mesh['brightness_gain'], dtype='f4')[:, None]), axis=1)
             self._vertices = context.buffer(vertices.tobytes())
             self._indices = context.buffer(np.asarray(mesh['triangles'], dtype='i4').tobytes())
-            self._array = context.vertex_array(self._program, [(self._vertices, '2f 2f', 'atlas', 'source')], self._indices)
+            self._array = context.vertex_array(self._program,
+                                               [(self._vertices, '2f 2f 1f', 'atlas', 'source', 'brightness_gain')],
+                                               self._indices)
             self._program['source_texture'].value = 0
             self._program['decoration_texture'].value = 1
             self._program['has_decoration'].value = decoration_path is not None

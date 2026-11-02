@@ -26,6 +26,12 @@ An offline, single-view anamorphic video mapper for the TRYX PANORAMA SE curved 
 
 输出无音轨，最高 60 fps，自动保留源有理帧率。预览是缩小代理，最终导出使用完整素材。普通二维视频不会获得真实双目深度；头部离开设计眼位后可能出现拉伸和折感。铺满约束不会去掉原片内部黑边，需要主动放大裁切。
 
+## 实验性亮度补偿
+
+v1.2.0 提供默认关闭的视角亮度补偿：根据屏幕各处与目标眼位的夹角，压暗相对较亮的区域，尝试减轻圆弧中央比两翼更亮的现象。源视频和立牌装饰一起处理；代价是降低整体可用峰值亮度。
+
+掠射角相对亮度 60%、曲线指数 2 仅是**未实测的实验起点**，不是 AMOLED 的通用物理参数或 TRYX 实测结果。可载入中性灰卡，实机调节亮度下限、曲线和补偿强度；目标眼位的“模型模拟”只影响预览，展开图显示实际预处理像素。详见 [亮度补偿原理与校准](docs/BRIGHTNESS.md)。输出仍为 2160×1080，MP4 的严格 500 MB 限制不变。
+
 ## 上传画布与旧版成片
 
 v1.1.1 起，以用户实际 KANALI 的 **2:1 上传窗口**为准，展开预览、GPU/Blender 渲染、MP4 和归档母版统一使用 **2160×1080、方形像素（SAR 1:1）**。官网面板标称的 2240×1080 与软件上传画布是不同概念；不能直接用前者决定后者。
@@ -73,6 +79,6 @@ python -m unittest discover -s tests
 node --test web/*.test.cjs
 ```
 
-测试按环境变量、PATH 或本地设置定位 FFmpeg。启动面板后运行 `python scripts/verify_pipeline.py` 可做合成素材真实导出回归。发布检查见 [v1.1.1 验收](docs/VALIDATION-1.1.1.md)，构建见 `python scripts/build_release.py --help`。
+测试按环境变量、PATH 或本地设置定位 FFmpeg。启动面板后运行 `python scripts/verify_pipeline.py` 可做合成素材真实导出回归。发布检查见 [v1.2.0 验收](docs/VALIDATION-1.2.0.md)，构建见 `python scripts/build_release.py --help`。
 
 服务只监听 `127.0.0.1`，媒体不上传云端。自有源码采用 MIT；第三方组件各自许可证见 [声明](THIRD_PARTY_NOTICES.md)。

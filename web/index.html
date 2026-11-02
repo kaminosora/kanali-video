@@ -38,6 +38,15 @@
         </div>
         <details class="screen-settings" open><summary>屏幕曲面 <span class="estimate">估算 · 待校准</span></summary><div id="screen-controls"></div><p class="control-note">宽度为展开弧长。G2 连续过渡为几何估算，不代表厂家真实曲线。</p></details>
         <button id="reset-geometry" class="text-button">恢复默认几何 <span>↺</span></button>
+        <details class="brightness-settings"><summary>实验：角度亮度补偿</summary>
+          <label class="brightness-toggle"><input id="brightness-enabled" type="checkbox">启用补偿并应用到导出</label>
+          <p class="control-note">只压暗较亮区域，不提高暗区亮度；整体会变暗。参数可关闭补偿后继续调整，用模拟开关对照。</p>
+          <div id="brightness-controls"></div>
+          <p class="control-note">0° = 视线垂直屏面，参考亮度 100%；90° = 掠射。60% 与指数 2 仅为实验起点，非厂家实测。实际衰减需按屏幕校准。</p>
+          <p id="brightness-summary" class="brightness-summary" role="status">调整后显示视角范围、预测亮度与补偿倍率。</p>
+          <button id="brightness-calibration" class="text-button" type="button">载入中灰亮度校准图 <span>↗</span></button>
+          <p class="control-note">校准图会替换当前素材，可导出后在实屏对照调整；定好参数再导回原视频。</p>
+        </details>
       </section>
     </aside>
 
@@ -56,7 +65,7 @@
       </section>
 
       <div class="secondary-previews">
-        <section class="panel result-view"><div class="preview-heading"><div><span class="eyebrow">OBSERVER VIEW</span><h2>目标视点效果</h2></div><div class="segmented small" id="comparison"><button data-mode="corrected" class="active">已校正</button><button data-mode="uncorrected">未校正</button></div></div><div class="gl-stage"><canvas id="observer-preview" aria-label="目标观察位置的校正效果预览"></canvas><span class="canvas-empty">导入素材后显示</span><span class="stage-corner" id="view-caption">45° / 10° / 650 mm</span></div><p class="preview-caption" id="comparison-caption"><span class="cyan-dot"></span>预变形后，从设定视点观看的效果</p></section>
+        <section class="panel result-view"><div class="preview-heading"><div><span class="eyebrow">OBSERVER VIEW</span><h2>目标视点效果</h2></div><div class="segmented small" id="comparison"><button data-mode="corrected" class="active">已校正</button><button data-mode="uncorrected">未校正</button></div></div><div class="gl-stage"><canvas id="observer-preview" aria-label="目标观察位置的校正效果预览"></canvas><span class="canvas-empty">导入素材后显示</span><span class="stage-corner" id="view-caption">45° / 10° / 650 mm</span></div><p class="preview-caption" id="comparison-caption"><span class="cyan-dot"></span>预变形后，从设定视点观看的效果</p><label class="brightness-simulation"><input id="simulate-angle" type="checkbox">模拟实屏角度亮度 <small>实验模型 · 仅此预览</small></label></section>
         <section class="panel result-view"><div class="preview-heading"><div><span class="eyebrow">UNFOLDED OUTPUT</span><h2>曲面展开图</h2></div><span class="resolution-pill" id="output-resolution">2160 × 1080</span></div><div class="gl-stage atlas-stage"><canvas id="atlas-preview" aria-label="输出展开图的实时预览"></canvas><span class="canvas-empty">导入素材后显示</span><span class="stage-corner">屏幕展开 · 供设备播放</span></div><p class="preview-caption">展开图的变形用于抵消曲面与观察透视</p></section>
       </div>
       <div class="workspace-footnote"><span><i></i> 共享几何网格 · WebGL 实时预览</span><span>素材与输出均保存在本项目内</span></div>

@@ -28,6 +28,10 @@ DEFAULT_CONFIG = {
     "zoom": 1.0,
     "pan_x": 0.0,
     "pan_y": 0.0,
+    "brightness_enabled": False,
+    "brightness_floor": 0.6,
+    "brightness_power": 2.0,
+    "brightness_strength": 1.0,
 }
 
 # Integrating the tangent avoids confusing horizontal distance with arc length.
@@ -71,6 +75,10 @@ def normalize_config(raw):
             if value not in ("plain", "standee"):
                 raise ValueError("presentation must be 'plain' or 'standee'")
             config[key] = value
+        elif key == "brightness_enabled":
+            if not isinstance(value, bool):
+                raise ValueError("brightness_enabled must be a boolean")
+            config[key] = value
         else:
             config[key] = _number(value, key)
     for key in ("screen_height_mm", "screen_width_mm"):
@@ -93,6 +101,11 @@ def normalize_config(raw):
     for key in ("pan_x", "pan_y"):
         if not -10 <= config[key] <= 10:
             raise ValueError(f"{key} must lie between -10 and 10")
+    for key in ("brightness_floor", "brightness_strength"):
+        if not 0 <= config[key] <= 1:
+            raise ValueError(f"{key} must lie between 0 and 1")
+    if not .25 <= config["brightness_power"] <= 8:
+        raise ValueError("brightness_power must lie between 0.25 and 8")
     _validate_view(config)
     return config
 
@@ -378,7 +391,9 @@ def mapping_mesh(config, source_aspect, columns=192, rows=64):
     first = np.column_stack((lower_left, lower_left + 1, lower_left + columns + 1))
     second = np.column_stack((lower_left + 1, lower_left + columns + 2, lower_left + columns + 1))
     triangles = np.stack((first, second), axis=1).reshape(-1, 3)
+    from .brightness import brightness_fields
     return {
+        **brightness_fields(config, positions, atlas, basis[0]),
         "positions": positions.tolist(),
         "atlas": atlas.tolist(),
         "uv": uv.tolist(),

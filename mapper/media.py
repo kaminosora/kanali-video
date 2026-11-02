@@ -404,6 +404,17 @@ def prepare_preview(path: str | Path, cache_dir: str | Path,
     return dict(preview_path=str(preview), thumbnail_path=str(thumbnail))
 
 
+def create_brightness_calibration(path: str | Path) -> str:
+    """Neutral encoded-SDR mid-gray for manual angular luminance calibration."""
+    from mapper.output import WIDTH, HEIGHT
+    path = Path(path).resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        raise FileExistsError(f'不会覆盖已有文件：{path}')
+    Image.new('RGB', (WIDTH, HEIGHT), (128, 128, 128)).save(path)
+    return str(path)
+
+
 def create_calibration(path: str | Path) -> str:
     """Generate KANALI 2:1 SDR alignment artwork with asymmetric corners."""
     from mapper.output import WIDTH as width, HEIGHT as height
