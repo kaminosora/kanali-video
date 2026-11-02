@@ -26,7 +26,7 @@ BUILD_REQUIREMENTS = {'pyinstaller':PYINSTALLER_VERSION,'pyinstaller-hooks-contr
                       'pywin32-ctypes':'0.2.3','setuptools':'84.2.1'}
 PUBLIC_ROOT_FILES = ('app.py','entrypoint.py','requirements.txt','settings.example.json',
                      'Start-Panorama.cmd','Stop-Panorama.cmd','README.md','LICENSE','THIRD_PARTY_NOTICES.md','.gitignore')
-PUBLIC_DOCS = ('docs/CALIBRATION.md','docs/HARDWARE.md','docs/BRIGHTNESS.md','docs/VALIDATION-1.1.0.md','docs/VALIDATION-1.1.1.md','docs/VALIDATION-1.2.0.md','docs/API.md','research/SOURCES.md')
+PUBLIC_DOCS = ('docs/CALIBRATION.md','docs/HARDWARE.md','docs/BRIGHTNESS.md','docs/AXIS-CALIBRATION.md','docs/VALIDATION-1.1.0.md','docs/VALIDATION-1.1.1.md','docs/VALIDATION-1.2.0.md','docs/VALIDATION-1.3.0.md','docs/API.md','research/SOURCES.md')
 PUBLIC_EXAMPLES = ('examples/calibration-cover.mp4','examples/calibration-standee.mp4','examples/motion-demo.mp4','examples/calibration-2160x1080.png')
 PUBLIC_SCRIPTS = ('pick_file.py','stop_server.py','setup_deps.py','install_media.py','build_release.py','verify_pipeline.py','verify_portable.py','test_release.py')
 PRIVATE_NAMES = {'settings.json','inputs','outputs','presets','.cache','.deps','.build-deps','__pycache__','.git','.agents','.codex'}

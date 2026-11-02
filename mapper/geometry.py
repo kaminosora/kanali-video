@@ -20,6 +20,7 @@ DEFAULT_CONFIG = {
     "screen_width_mm": 152.65185185185183,
     "bend_deg": 90.0,
     "curve_length_mm": 14.0,
+    "bend_center_u": 0.5,
     "view_azimuth_deg": 45.0,
     "view_elevation_deg": 10.0,
     "view_distance_mm": 650.0,
@@ -32,6 +33,7 @@ DEFAULT_CONFIG = {
     "brightness_floor": 0.6,
     "brightness_power": 2.0,
     "brightness_strength": 1.0,
+    "brightness_shoulder": 1.0,
 }
 
 # Integrating the tangent avoids confusing horizontal distance with arc length.
@@ -90,6 +92,11 @@ def normalize_config(raw):
         raise ValueError("curve_length_mm must lie within the unfolded width")
     if config["bend_deg"] > 0 and config["curve_length_mm"] <= 0:
         raise ValueError("a bent screen needs a positive G2 transition length")
+    if not .001 <= config["bend_center_u"] <= .999:
+        raise ValueError("bend_center_u must lie between 0.001 and 0.999")
+    half_curve = config["curve_length_mm"] / (2 * config["screen_width_mm"])
+    if config["bend_deg"] > 0 and not half_curve <= config["bend_center_u"] <= 1 - half_curve:
+        raise ValueError("the complete G2 transition must fit inside the unfolded screen")
     if not -135 <= config["view_azimuth_deg"] <= 225:
         raise ValueError("view_azimuth_deg must lie between -135 and 225")
     if not -85 <= config["view_elevation_deg"] <= 85:
@@ -106,6 +113,8 @@ def normalize_config(raw):
             raise ValueError(f"{key} must lie between 0 and 1")
     if not .25 <= config["brightness_power"] <= 8:
         raise ValueError("brightness_power must lie between 0.25 and 8")
+    if not .25 <= config["brightness_shoulder"] <= 8:
+        raise ValueError("brightness_shoulder must lie between 0.25 and 8")
     _validate_view(config)
     return config
 
@@ -130,12 +139,29 @@ def camera_basis(config):
     return _basis(normalize_config(config))
 
 
+def _axis_offset(config):
+    """Canvas-centred arc coordinate of the physical bend; ignored when flat."""
+    return ((config["bend_center_u"] - .5) * config["screen_width_mm"]
+            if config["bend_deg"] else 0.0)
+
+
+def _curve_normals(config, arcs):
+    """Nx3 outward unit normals at canvas-centred arc coordinates."""
+    arcs = np.asarray(arcs, dtype=np.float64).reshape(-1)
+    if not config["bend_deg"]:
+        return np.column_stack((np.zeros_like(arcs), -np.ones_like(arcs), np.zeros_like(arcs)))
+    phase = np.clip((arcs - _axis_offset(config)) / config["curve_length_mm"] + .5, 0, 1)
+    theta = math.radians(config["bend_deg"]) * (phase * phase * (3 - 2 * phase) - .5)
+    return np.column_stack((np.sin(theta), -np.cos(theta), np.zeros_like(theta)))
+
+
 def _curve_points(config, arcs):
     arcs = np.asarray(arcs, dtype=np.float64).reshape(-1)
     beta = math.radians(config["bend_deg"])
     transition = config["curve_length_mm"]
     if beta == 0:
         return np.column_stack((arcs, np.zeros_like(arcs)))
+    arcs = arcs - _axis_offset(config)
     magnitude = np.abs(arcs)
     curved = np.minimum(magnitude, transition / 2)
     sample_arc = curved[:, None] * (_QUAD_X[None, :] + 1) / 2
@@ -150,11 +176,13 @@ def _curve_points(config, arcs):
 
 
 def curve_points(config, arc_positions):
-    """Return Nx2 XY points for centred arc positions in [-width/2,width/2].
+    """Return Nx2 XY points for canvas-centred arcs in [-width/2,width/2].
 
     This helper takes physical arc positions, not a sample count. The curve
     tangent turns through beta*smoothstep(q); its curvature is zero at both
-    joins with straight wings, giving a G2 transition.
+    joins with straight wings, giving a G2 transition. The world origin is
+    the physical bend centre, which need not be at the canvas midpoint.
+    A flat screen ignores bend_center_u and keeps its midpoint at the origin.
     """
     config = normalize_config(config)
     try:
@@ -170,7 +198,8 @@ def _minimum_depth(config, normal):
     """Exact candidates for max normal dot P on this convex profile."""
     width, transition = config["screen_width_mm"], config["curve_length_mm"]
     beta = math.radians(config["bend_deg"])
-    arcs = [-width / 2, 0.0, width / 2]
+    offset = _axis_offset(config)
+    arcs = [-width / 2, offset, width / 2]
     yaw = math.radians(config["view_azimuth_deg"] - 45)
     if beta > 0 and -beta / 2 < yaw < beta / 2:
         target = 0.5 + yaw / beta
@@ -181,7 +210,7 @@ def _minimum_depth(config, normal):
                 low = q
             else:
                 high = q
-        arcs.append(transition * ((low + high) / 2 - 0.5))
+        arcs.append(offset + transition * ((low + high) / 2 - 0.5))
     horizontal = _curve_points(config, arcs) @ normal[:2]
     farthest = float(np.max(horizontal)) + abs(normal[2]) * config["screen_height_mm"] / 2
     return config["view_distance_mm"] - farthest
@@ -218,11 +247,12 @@ def _project(points, config, basis=None):
 def _outline(config, basis):
     width, height = config["screen_width_mm"], config["screen_height_mm"]
     transition = config["curve_length_mm"]
+    offset = _axis_offset(config)
     if config["bend_deg"] == 0:
         arcs = np.array([-width / 2, width / 2])
     else:
         arcs = np.unique(np.concatenate(([-width / 2],
-                    np.linspace(-transition / 2, transition / 2, _OUTLINE_INTERVALS + 1),
+                    np.linspace(offset - transition / 2, offset + transition / 2, _OUTLINE_INTERVALS + 1),
                     [width / 2])))
     profile = _curve_points(config, arcs)
     lower = np.column_stack((profile, np.full(len(arcs), -height / 2)))
@@ -276,7 +306,8 @@ def _outline_error(config, basis, aspect):
     transition = config["curve_length_mm"]
     curvature = 1.5 * beta / transition
     depth = _minimum_depth(config, basis[3])
-    radius = math.hypot(config["screen_width_mm"] / 2, config["screen_height_mm"] / 2)
+    longest_arc = config["screen_width_mm"] * max(config["bend_center_u"], 1 - config["bend_center_u"])
+    radius = math.hypot(longest_arc, config["screen_height_mm"] / 2)
     distance = config["view_distance_mm"]
     second_derivative = distance * (curvature / depth + 2 / depth**2
                                     + radius * curvature / depth**2 + 2 * radius / depth**3)
@@ -355,11 +386,13 @@ def _boundary_indices(columns, rows):
             + [row * stride for row in range(rows - 1, 0, -1)])
 
 
-def mapping_mesh(config, source_aspect, columns=192, rows=64):
+def mapping_mesh(config, source_aspect, columns=192, rows=64, *, extra_u=None):
     """Build the shared mesh; columns and rows count subdivision intervals.
 
     Vertices are row-major, left-to-right then bottom-to-top. Counts are
-    (columns+1)*(rows+1) vertices and 2*columns*rows front-facing triangles.
+    (columns+1)*(rows+1) vertices and 2*columns*rows front-facing triangles
+    when extra_u is None. Optional finite horizontal UV samples are merged
+    into the regular grid; the effective column count then follows unique U.
     boundary_uv starts at bottom-left and proceeds counterclockwise, with no
     repeated closing point. Bounds are [xmin,ymin,xmax,ymax] in the plane
     through the screen origin perpendicular to the viewing axis (millimetres),
@@ -378,6 +411,17 @@ def mapping_mesh(config, source_aspect, columns=192, rows=64):
         raise ValueError("mapping grid exceeds the 2000000 vertex limit")
     basis = _basis(config)
     u = np.linspace(0.0, 1.0, columns + 1)
+    if extra_u is not None:
+        try:
+            extra = [_number(value, "extra_u sample") for value in extra_u]
+        except TypeError as error:
+            raise ValueError("extra_u must contain finite samples between 0 and 1") from error
+        if any(value < 0 or value > 1 for value in extra):
+            raise ValueError("extra_u samples must lie between 0 and 1")
+        u = np.unique(np.concatenate((u, extra)))
+        columns = len(u) - 1
+        if len(u) * (rows + 1) > 2_000_000:
+            raise ValueError("mapping grid exceeds the 2000000 vertex limit")
     v = np.linspace(0.0, 1.0, rows + 1)
     profile = _curve_points(config, (u - 0.5) * config["screen_width_mm"])
     positions = np.column_stack((np.tile(profile, (rows + 1, 1)),
@@ -402,4 +446,68 @@ def mapping_mesh(config, source_aspect, columns=192, rows=64):
         "boundary_uv": uv[_boundary_indices(columns, rows)].tolist(),
         "bounds": bounds.tolist(),
         "config": config,
+    }
+
+
+def _brightness_extra_u(config, columns):
+    """Add at most 65 local columns when a steep angular gain needs them."""
+    if (not config["brightness_enabled"] or config["brightness_floor"] >= 1
+            or config["brightness_strength"] <= 0 or config["bend_deg"] == 0):
+        return None
+    # Keep the public regular-grid validation authoritative for invalid counts.
+    if isinstance(columns, bool) or not isinstance(columns, Integral) or not 1 <= columns <= 8192:
+        return None
+    width, length = config["screen_width_mm"], config["curve_length_mm"]
+    target = max(16, 8 * config["brightness_shoulder"])
+    if columns * length / width >= target:
+        return None
+    center, half = config["bend_center_u"], length / (2 * width)
+    return np.clip(np.linspace(center-half, center+half, math.ceil(target)+1), 0, 1)
+
+
+def render_mapping_mesh(config, source_aspect, columns=512, rows=128):
+    """Export mesh with bounded local sampling for active narrow brightness transitions."""
+    config = normalize_config(config)
+    return mapping_mesh(config, source_aspect, columns, rows,
+                        extra_u=_brightness_extra_u(config, columns))
+
+
+def preview_mapping_mesh(config, source_aspect, columns=192, rows=64):
+    """Browser mesh using the same local sampling rule as the export renderer."""
+    config = normalize_config(config)
+    return mapping_mesh(config, source_aspect, columns, rows,
+                        extra_u=_brightness_extra_u(config, columns))
+
+
+def axis_preview_mesh(config, source_aspect, actual_center, columns=192, rows=64):
+    """Geometry-only error simulation, separate from formal rendering settings.
+
+    Pair these projected positions and angular response with the renderer's UV
+    and gain at the SAME atlas indices. It models exported pixels on a panel
+    whose physical bend falls at another column; it never replaces export UVs.
+    The actual centre is a user's hypothesis, not an automatic measurement.
+    """
+    from .brightness import brightness_fields
+    rendered = preview_mapping_mesh(config, source_aspect, columns, rows)
+    render_config = rendered["config"]
+    actual_config = normalize_config(dict(render_config, bend_center_u=actual_center))
+    actual_center = actual_config["bend_center_u"]
+    # Use exactly the renderer's atlas. Independently densifying the actual
+    # bend would shift indices and silently pair pixels with the wrong surface.
+    atlas = np.asarray(rendered["atlas"], dtype=np.float64)
+    unique_u, inverse = np.unique(atlas[:, 0], return_inverse=True)
+    profile = _curve_points(actual_config, (unique_u-.5)*actual_config["screen_width_mm"])
+    positions = np.column_stack((profile[inverse], (atlas[:, 1]-.5)*actual_config["screen_height_mm"]))
+    basis = _basis(actual_config)
+    projected = _project(positions, actual_config, basis)
+    _, _, bounds = _source_frame(actual_config, _number(source_aspect, "source_aspect"),
+                                _outline(actual_config, basis), basis)
+    brightness = brightness_fields(actual_config, positions, atlas, basis[0])
+    return {
+        "projected": projected.tolist(),
+        "bounds": bounds.tolist(),
+        "angular_response": brightness["angular_response"],
+        "actual_bend_center_u": actual_center,
+        "render_bend_center_u": render_config["bend_center_u"],
+        "delta_u": actual_center - render_config["bend_center_u"],
     }

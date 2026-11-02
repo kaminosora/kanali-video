@@ -11,7 +11,7 @@ from mathutils import Vector
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from mapper.geometry import mapping_mesh, normalize_config, camera_basis
+from mapper.geometry import render_mapping_mesh as mapping_mesh, normalize_config, camera_basis
 from mapper.encoding import encoder_command
 from mapper.storage import write_json as save_json
 from mapper.output import ASPECT, render_size

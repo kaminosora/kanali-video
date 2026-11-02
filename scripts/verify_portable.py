@@ -17,11 +17,11 @@ ROOT=Path(__file__).resolve().parents[1]
 CLIENT=build_opener(ProxyHandler({}))
 
 
-def brightness_samples(frame, width=2160, height=1080):
+def brightness_samples(frame, width=2160, height=1080, center_u=.5, expected_center=113):
     """Sample neutral patches from a decoded top-down RGB24 delivery frame."""
     assert len(frame)==width*height*3,('Incomplete decoded RGB24 frame',len(frame))
     samples={}
-    for name,x in (('left',32),('center',width//2),('right',width-33)):
+    for name,x in (('left',32),('center',round(width*center_u)),('right',width-33)):
         y=height//2
         pixels=[frame[(row*width+column)*3:(row*width+column)*3+3]
                 for row in range(y-3,y+4) for column in range(x-3,x+4)]
@@ -29,7 +29,7 @@ def brightness_samples(frame, width=2160, height=1080):
     # The exported texture must dim the curved centre, while leaving the wings
     # near 128. Accidentally exporting gain*angular_response would dim both and
     # fail the side samples and the required centre-to-side difference.
-    for name,expected in (('center',113),('left',128),('right',128)):
+    for name,expected in (('center',expected_center),('left',128),('right',128)):
         assert all(abs(value-expected)<=3 for value in samples[name]),samples
     assert max(samples['center'])<min(samples['left']+samples['right'])-8,samples
     return samples
@@ -84,13 +84,26 @@ def main():
             assert estimate['frames']==1800 and estimate['limit_bytes']==500_000_000
             video=api('/api/import',{'path':str(folder/'examples'/'motion-demo.mp4')})
             gray=api('/api/brightness-calibration',{})
+            assert state['defaults']['bend_center_u']==.5 and state['defaults']['brightness_shoulder']==1
+            line_source=api('/api/axis-calibration',{})
+            assert line_source['width']==2160 and line_source['height']==1080
+            preview=api('/api/mesh',dict(config=state['defaults'],source_aspect=2,
+                        axis_preview={'actual_bend_center_u':.54}))
+            assert preview['config']['bend_center_u']==.5
+            assert abs(preview['axis_preview']['delta_pixels']-86.4)<1e-8
+            assert len(preview['mesh']['uv'])==len(preview['axis_preview']['projected'])
+            assert 'uv' not in preview['axis_preview'] and 'brightness_gain' not in preview['axis_preview']
             results=[]
             cases=[(source,'auto','auto',False),(source,'blender','libx264',False),(video,'auto','auto',False)]
             if caps['encoders'].get('h264_amf',{}).get('available'):
                 cases.append((video,'auto','h264_amf',False))
             cases.extend(((gray,'gpu','auto',True),(gray,'blender','libx264',True)))
-            for media,renderer,encoder,brightness_enabled in cases:
+            cases.extend(((gray,'gpu','auto','axis'),(gray,'blender','libx264','axis')))
+            for media,renderer,encoder,brightness_case in cases:
+                brightness_enabled=bool(brightness_case)
                 config=dict(state['defaults'],brightness_enabled=brightness_enabled)
+                if brightness_case=='axis':
+                    config.update(bend_center_u=.54,brightness_shoulder=2)
                 job=api('/api/render',dict(source_id=media['id'],config=config,
                     start=0,end=.2,fps=30,quality='high',supersample=1,
                     name='portable-'+renderer+('-brightness' if brightness_enabled else ''),
@@ -120,11 +133,13 @@ def main():
                         '-i',str(output),'-frames:v','1','-pix_fmt','rgb24','-f','rawvideo','pipe:1'],
                         capture_output=True,timeout=30,creationflags=flags)
                     assert first_frame.returncode==0,first_frame.stderr.decode('utf-8',errors='replace')[-1500:]
-                    gray_samples=brightness_samples(first_frame.stdout)
+                    gray_samples=brightness_samples(first_frame.stdout,center_u=config['bend_center_u'],
+                                                    expected_center=110 if brightness_case=='axis' else 113)
                 results.append(dict(source_kind=media['kind'],renderer=current['backend']['renderer'],encoder=current['backend']['encoder'],
                                     size_bytes=output.stat().st_size,frames=current['total_frames'],
                                     width=2160,height=1080,sar='1:1',dar='2:1',
-                                    brightness_enabled=brightness_enabled,gray_samples=gray_samples))
+                                    brightness_enabled=brightness_enabled,bend_center_u=config['bend_center_u'],
+                                    brightness_shoulder=config['brightness_shoulder'],gray_samples=gray_samples))
             report={'version':state['version'],'bundled_python':True,'system_python_path_removed':True,
                     'relocated_unicode_space_directory':True,'media_bootstrap':True,'estimate':estimate,'exports':results}
             (folder/'acceptance.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')

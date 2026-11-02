@@ -42,10 +42,22 @@
           <label class="brightness-toggle"><input id="brightness-enabled" type="checkbox">启用补偿并应用到导出</label>
           <p class="control-note">只压暗较亮区域，不提高暗区亮度；整体会变暗。参数可关闭补偿后继续调整，用模拟开关对照。</p>
           <div id="brightness-controls"></div>
+          <p class="control-note">肩部过渡陡峭度 1 保持原曲线；大于 1 会加强中间角度肩部的补偿，可尝试消除中央两侧的细亮带。先用平行线校准几何，再用中灰图调光，避免用弧长同时修正两种误差。</p>
           <p class="control-note">0° = 视线垂直屏面，参考亮度 100%；90° = 掠射。60% 与指数 2 仅为实验起点，非厂家实测。实际衰减需按屏幕校准。</p>
           <p id="brightness-summary" class="brightness-summary" role="status">调整后显示视角范围、预测亮度与补偿倍率。</p>
           <button id="brightness-calibration" class="text-button" type="button">载入中灰亮度校准图 <span>↗</span></button>
           <p class="control-note">校准图会替换当前素材，可导出后在实屏对照调整；定好参数再导回原视频。</p>
+        </details>
+        <details class="brightness-settings axis-settings"><summary>实验：弯折中轴错位</summary>
+          <p class="control-note">位置按展开视频从左 0% 到右 100% 计算。中轴改变曲面与像素的对应关系，不等同于平移素材。</p>
+          <div id="axis-render-controls"></div>
+          <label class="brightness-toggle"><input id="axis-preview-enabled" type="checkbox">启用模拟实际屏幕 · 仅观察预览</label>
+          <div class="parameter"><div class="parameter-head"><label for="number-actual-bend-center">模拟实际轴 · 不写入导出</label><span class="parameter-value"><input id="number-actual-bend-center" type="number" min="0.1" max="99.9" step="0.01" value="50" disabled>%</span></div><input id="range-actual-bend-center" type="range" min="0.1" max="99.9" step="0.01" value="50" aria-label="模拟实际弯折中轴" disabled></div>
+          <p id="axis-summary" class="brightness-summary" role="status">调整后显示两条中轴的位置与偏差。</p>
+          <div class="axis-actions"><button id="axis-start" class="button compact" type="button">以当前渲染轴开始测试</button><button id="axis-apply" class="button compact" type="button" disabled>应用实际轴到渲染</button></div>
+          <button id="axis-calibration" class="text-button" type="button">载入多平行直线测试图 <span>↗</span></button>
+          <p class="control-note">推荐固定渲染假设轴为已上传片段原来使用的值（默认输出为 50%），只调模拟实际轴，直到直线弯曲与实屏相似。应用后会重置取景，并使两轴对齐；重新导出再验证。</p>
+          <p class="control-note">这是人工匹配后的估计，并非自动测量。两轴均自由变化时无法唯一反推硬件；眼位、弧长与亮度模型仍可能影响观察结果。展开预览和成片始终只使用渲染假设轴。</p>
         </details>
       </section>
     </aside>

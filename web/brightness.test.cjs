@@ -3,9 +3,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const core = require('./ui-core.js');
-assert.deepEqual(core.brightnessOptions({}), {brightness_enabled:false,brightness_floor:.6,brightness_power:2,brightness_strength:1});
+assert.deepEqual(core.brightnessOptions({}), {brightness_enabled:false,brightness_floor:.6,brightness_power:2,brightness_shoulder:1,brightness_strength:1});
 assert.deepEqual(core.brightnessOptions({brightness_enabled:true,brightness_floor:-2,brightness_power:50,brightness_strength:NaN}),
-  {brightness_enabled:true,brightness_floor:0,brightness_power:8,brightness_strength:1});
+  {brightness_enabled:true,brightness_floor:0,brightness_power:8,brightness_shoulder:1,brightness_strength:1});
 assert.match(core.brightnessSummaryLabel({enabled:true,angle_min_deg:2,angle_max_deg:49,response_min:.73,response_max:1,gain_min:.73,gain_max:1}), /2.0°–49.0°/);
 assert.match(core.brightnessSummaryLabel({enabled:false,angle_min_deg:0,angle_max_deg:45,response_min:.8,response_max:1,gain_min:1,gain_max:1}), /未开启/);
 

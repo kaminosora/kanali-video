@@ -13,10 +13,53 @@ class BrightnessTests(unittest.TestCase):
         np.testing.assert_allclose(angular_response(np.cos(np.deg2rad([0,45,60,90])),.6,2),[1,.8,.7,.6])
         np.testing.assert_allclose(angular_response([0,.3,1],1,2),[1,1,1])
 
+    def test_shoulder_preserves_anchors_and_is_monotone(self):
+        from mapper.brightness import angular_response
+        mu=np.linspace(0,1,10001)
+        original=.6+.4*mu**2
+        np.testing.assert_array_equal(angular_response(mu,.6,2,1),original)
+        for shoulder in (.25,.5,2,4,8):
+            with self.subTest(shoulder=shoulder):
+                result=angular_response(mu,.6,2,shoulder)
+                self.assertTrue(np.isfinite(result).all())
+                self.assertTrue((np.diff(result)>=0).all())
+                np.testing.assert_allclose(angular_response([0,2**-.5,1],.6,2,shoulder),[.6,.8,1])
+                if shoulder>1:
+                    self.assertGreater(angular_response(np.cos(np.deg2rad(30)),.6,2,shoulder),.9)
+
+    def test_shoulder_extremes_and_unity_do_not_create_invalid_response(self):
+        from mapper.brightness import angular_response
+        for floor in (0,.6,1):
+            for power in (.25,8):
+                for shoulder in (.25,8):
+                    result=angular_response([0,1e-8,.5,1-1e-12,1],floor,power,shoulder)
+                    self.assertTrue(np.isfinite(result).all())
+                    self.assertTrue(((result>=floor)&(result<=1)).all())
+
+    def test_shoulder_can_explain_bright_shoulders_with_matched_center_and_wings(self):
+        from mapper.brightness import angular_response
+        # A reference at 45 degrees and the forward-facing centre both match;
+        # the older family still leaves brighter residuals at intermediate angles.
+        angles=np.array([0,15,30,45])
+        old=angular_response(np.cos(np.deg2rad(angles)),.6,2,1)
+        actual=angular_response(np.cos(np.deg2rad(angles)),.6,2,2)
+        np.testing.assert_allclose(actual[[0,3]],old[[0,3]])
+        self.assertGreater((actual/old)[2],1.06)
+
+    def test_shoulder_mesh_gains_equalize_response_at_shifted_axis(self):
+        from mapper.geometry import mapping_mesh
+        mesh=mapping_mesh({'brightness_enabled':True,'brightness_shoulder':2,
+                           'bend_center_u':.55},2,columns=127,rows=15)
+        self.assertEqual(mesh['brightness_summary']['shoulder'],2)
+        response=np.asarray(mesh['angular_response']);gain=np.asarray(mesh['brightness_gain'])
+        np.testing.assert_allclose(response*gain,mesh['brightness_summary']['target_response'],rtol=1e-10,atol=0)
+        self.assertLessEqual(gain.max(),1)
+
     def test_default_is_off_and_old_presets_stay_off(self):
         from mapper.geometry import mapping_mesh
         mesh=mapping_mesh({},2,columns=32,rows=8)
         self.assertFalse(mesh['config']['brightness_enabled'])
+        self.assertEqual(mesh['config']['brightness_shoulder'],1)
         np.testing.assert_array_equal(mesh['brightness_gain'],1)
 
     def test_full_strength_equalizes_model_without_boosting(self):
@@ -61,7 +104,9 @@ class BrightnessTests(unittest.TestCase):
         from mapper.geometry import normalize_config
         for patch in ({'brightness_enabled':1},{'brightness_floor':-1},{'brightness_floor':1.01},
                       {'brightness_power':0},{'brightness_power':9},{'brightness_strength':float('nan')},
-                      {'brightness_strength':2},{'brightness_floor':True}):
+                      {'brightness_strength':2},{'brightness_floor':True},
+                      {'brightness_shoulder':0},{'brightness_shoulder':9},
+                      {'brightness_shoulder':True},{'brightness_shoulder':float('nan')}):
             with self.subTest(patch=patch),self.assertRaises(ValueError):normalize_config(patch)
 
     def test_corner_reference_bounds_asymmetric_close_and_flat_views(self):
@@ -71,7 +116,9 @@ class BrightnessTests(unittest.TestCase):
                       {'bend_deg':0,'view_azimuth_deg':85},
                       {'curve_length_mm':152.65185185185183,'brightness_floor':0},
                       {'bend_deg':0,'view_azimuth_deg':134.9,'view_elevation_deg':0,
-                       'brightness_floor':0,'brightness_power':8}):
+                       'brightness_floor':0,'brightness_power':8},
+                      {'bend_deg':0,'view_azimuth_deg':134.9,'view_elevation_deg':0,
+                       'brightness_floor':0,'brightness_power':8,'brightness_shoulder':8}):
             with self.subTest(patch=patch):
                 mesh=mapping_mesh(dict(patch,brightness_enabled=True),2,columns=193,rows=23)
                 response=np.asarray(mesh['angular_response'])

@@ -23,7 +23,7 @@ from mapper.paths import app_root, worker_command
 
 ROOT = app_root()
 sys.path.insert(0, str(ROOT / ".deps"))
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 LOGGER = logging.getLogger("panorama.server")
 LOGGER.addHandler(logging.NullHandler())
 CLIENT_DISCONNECTS = (ConnectionAbortedError, ConnectionResetError, BrokenPipeError)
@@ -201,6 +201,13 @@ class Application:
             create_brightness_calibration(path)
         return self.import_source(path)
 
+    def axis_calibration(self):
+        from mapper.calibration import create_parallel_lines
+        path = self.cache / "axis-parallel-lines-v1.png"
+        if not path.exists():
+            create_parallel_lines(path)
+        return self.import_source(path)
+
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "PanoramaMapper/" + VERSION
@@ -363,7 +370,7 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(raw) if raw else {}
             if not isinstance(data, dict):
                 raise ValueError("请求必须是JSON对象")
-            from mapper.geometry import normalize_config, mapping_mesh
+            from mapper.geometry import normalize_config, preview_mapping_mesh as mapping_mesh
             from mapper.jobs import write_json
             if self.path == "/api/settings":
                 self.json(self.app.update_settings(data))
@@ -382,17 +389,21 @@ class Handler(BaseHTTPRequestHandler):
                 self.json(self.app.calibration())
             elif self.path == "/api/brightness-calibration":
                 self.json(self.app.brightness_calibration())
+            elif self.path == "/api/axis-calibration":
+                self.json(self.app.axis_calibration())
             elif self.path == "/api/mesh":
                 config = normalize_config(data.get("config", {}))
                 mesh = mapping_mesh(config, data.get("source_aspect", 16/9))
                 config = mesh.get("config", config)
+                from mapper.calibration import axis_preview_response
+                axis_preview = axis_preview_response(config, data.get("source_aspect", 16/9), data.get("axis_preview"))
                 self.app.config = config
                 decoration_url = None
                 if config.get("presentation") == "standee" and config["fit"] == "contain":
                     from mapper.decoration import standee_asset
                     asset = standee_asset(data.get("source_aspect", 16/9), self.app.cache / "decorations")
                     decoration_url = "/decoration/" + asset.name
-                self.json({"config": config, "mesh": mesh, "decoration_url": decoration_url})
+                self.json({"config": config, "mesh": mesh, "decoration_url": decoration_url, "axis_preview": axis_preview})
             elif self.path == "/api/preset":
                 name = str(data.get("name", "")).strip()
                 if not name or len(name) > 80 or re.search(r'[<>:"/\\|?*\x00-\x1f]', name) or name.endswith((".", " ")):

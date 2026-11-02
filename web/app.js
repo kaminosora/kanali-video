@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
-  const { fitRect, uvToCanvas, meshUVSpan, trimRange, trimDraft, zoomForFit, decorationDomain, frameForMode, activeStandee, brightnessOptions, brightnessSummaryLabel, newestJobs, jobFeedback, elapsedLabel, exportTrim, renderPreferences, estimateLabel, jobResultLabel, accelerationLabel } = window.PanoramaUI;
+  const { fitRect, uvToCanvas, meshUVSpan, trimRange, trimDraft, zoomForFit, decorationDomain, frameForMode, activeStandee, brightnessOptions, brightnessSummaryLabel, axisLimits, axisCenter, axisSummaryLabel, newestJobs, jobFeedback, elapsedLabel, exportTrim, renderPreferences, estimateLabel, jobResultLabel, accelerationLabel } = window.PanoramaUI;
   const video = $('source-video'), image = $('source-image');
   const activeStates = new Set(['queued', 'preparing', 'rendering', 'encoding']);
   const parameters = [
@@ -13,8 +13,10 @@
     ['screen_width_mm', '展开宽度', 'mm', 60, 400, 0.1, 'screen-controls'],
     ['bend_deg', '两翼弯折', '°', 0, 110, 1, 'screen-controls'],
     ['curve_length_mm', 'G2 过渡弧长', 'mm', 2, 40, 0.5, 'screen-controls'],
+    ['bend_center_u', '渲染假设轴 · 写入导出', '%', 0.1, 99.9, 0.01, 'axis-render-controls', 100],
     ['brightness_floor', '90° 掠射相对亮度', '%', 0, 100, 1, 'brightness-controls', 100],
     ['brightness_power', '衰减曲线指数', '', 0.25, 8, 0.05, 'brightness-controls'],
+    ['brightness_shoulder', '肩部过渡陡峭度', '', 0.25, 8, 0.05, 'brightness-controls'],
     ['brightness_strength', '补偿强度', '%', 0, 100, 1, 'brightness-controls', 100]
   ];
   let config = {}, defaults = {}, source = null, mesh = null, sessionToken = '', presetNames = [];
@@ -29,6 +31,8 @@
   let outputProfile = {width:2160,height:1080,aspect:2,label:'KANALI 2:1'};
   // This is an observer-only display option; never persist or send it as render config.
   let simulateAngle = false;
+  // Actual geometry is a local hypothesis for testing; only bend_center_u exports.
+  let axisPreviewEnabled = false, actualBendCenterU = .5, axisPreviewData = null;
 
   function applyOutputProfile(value) {
     const valid = value && Number.isSafeInteger(value.width) && value.width > 0 && Number.isSafeInteger(value.height) && value.height > 0;
@@ -71,23 +75,64 @@
       for (const input of [number, range]) { input.min = min; input.max = max; input.step = step; }
       value.append(number, document.createTextNode(unit)); head.append(title, value);
       const limits = document.createElement('div'); limits.className = 'range-labels';
-      const lo = document.createElement('span'), hi = document.createElement('span'); lo.textContent = `${min} ${unit}`; hi.textContent = `${max} ${unit}`; limits.append(lo, hi);
+      const lo = document.createElement('span'), hi = document.createElement('span'); lo.id = `low-${key}`; hi.id = `high-${key}`; lo.textContent = `${min} ${unit}`; hi.textContent = `${max} ${unit}`; limits.append(lo, hi);
       field.append(head, range, limits); $(parent).append(field);
-      range.addEventListener('input', () => { config[key] = Number(range.value) / displayScale; number.value = range.value; scheduleMesh(); });
+      range.addEventListener('input', () => { config[key] = Number(range.value) / displayScale; number.value = range.value; parameterChanged(key); scheduleMesh(); });
       number.addEventListener('change', () => {
         if (!Number.isFinite(Number(number.value)) || number.value === '') return syncControls();
-        config[key] = Math.max(min, Math.min(max, Number(number.value))) / displayScale; syncControls(); scheduleMesh();
+        config[key] = Math.max(min, Math.min(max, Number(number.value))) / displayScale; parameterChanged(key); syncControls(); scheduleMesh();
       });
     }
   }
+  function parameterChanged(key) {
+    const before = config.bend_center_u;
+    config.bend_center_u = axisCenter(config, before);
+    actualBendCenterU = axisCenter(config, actualBendCenterU);
+    if (key === 'bend_center_u' || before !== config.bend_center_u) {
+      config = frameForMode(config, config.fit || 'cover');
+      $('zoom').value = 1;
+    }
+    syncAxisControls();
+  }
+  function syncAxisControls() {
+    const [low, high] = axisLimits(config).map(value => value * 100);
+    // Native range inputs anchor their step grid at min. Round inward so 50%
+    // remains on the .01% grid without ever extending beyond the physical arc.
+    let rangeLow = Math.ceil(low * 100) / 100, rangeHigh = Math.floor(high * 100) / 100;
+    if (rangeLow > rangeHigh) rangeLow = rangeHigh = 50;
+    for (const [stem, center] of [['bend_center_u',config.bend_center_u],['actual-bend-center',actualBendCenterU]]) {
+      const number = $(`number-${stem}`), range = $(`range-${stem}`);
+      number.min = low; number.max = high; number.step = 'any'; number.value = center * 100;
+      range.min = rangeLow; range.max = rangeHigh; range.step = .01;
+      range.value = Math.max(rangeLow, Math.min(rangeHigh, Math.round(center * 10000) / 100));
+      if (stem === 'actual-bend-center') { number.disabled = !axisPreviewEnabled; range.disabled = !axisPreviewEnabled; }
+    }
+    $('low-bend_center_u').textContent = `${low.toFixed(2)} %`; $('high-bend_center_u').textContent = `${high.toFixed(2)} %`;
+    $('axis-preview-enabled').checked = axisPreviewEnabled; $('axis-apply').disabled = !axisPreviewEnabled;
+    $('axis-apply').textContent = `应用实际轴 ${(actualBendCenterU * 100).toFixed(2)}% 到渲染`;
+    $('axis-summary').textContent = axisSummaryLabel(config, actualBendCenterU, outputProfile.width, axisPreviewEnabled);
+  }
+  function refreshPreviewMeshes() {
+    if (!mesh) return;
+    const observed = axisPreviewEnabled && axisPreviewData
+      ? {...mesh, projected:axisPreviewData.projected, bounds:axisPreviewData.bounds, angular_response:axisPreviewData.angular_response}
+      : mesh;
+    for (const view of glViews) view.setMesh(view.unfolded ? mesh : observed, config);
+    $('comparison-caption').textContent = axisPreviewEnabled
+      ? (comparison === 'corrected' ? '实验：将渲染假设轴生成的画面贴到模拟实际屏幕上' : '实验：普通视频直接贴到模拟实际屏幕上')
+      : comparison === 'corrected' ? '● 几何预变形后，从设定视点观看的效果' : '未做几何预变形，亮度补偿仍按实验开关应用';
+  }
   function syncControls() {
     config = { ...config, ...brightnessOptions(config) };
+    config.bend_center_u = axisCenter(config, config.bend_center_u);
+    actualBendCenterU = axisCenter(config, actualBendCenterU);
     for (const [key, , , , , , , displayScale = 1] of parameters) {
       if (config[key] === undefined) continue;
       $(`number-${key}`).value = Number((config[key] * displayScale).toFixed(4)); $(`range-${key}`).value = config[key] * displayScale;
     }
     $('brightness-enabled').checked = config.brightness_enabled;
     $('brightness-summary').textContent = brightnessSummaryLabel(mesh && mesh.brightness_summary);
+    syncAxisControls();
     $('zoom').value = Number(Number(config.zoom || 1).toFixed(3));
     $('zoom').min = config.fit === 'cover' ? '1' : '0.25';
     $('framing-note').textContent = config.fit === 'cover'
@@ -107,12 +152,13 @@
   async function updateMesh(serial) {
     const requestConfig = { ...config }; meshPending = true; updateRenderButton();
     try {
-      const result = await api('/api/mesh', { config: requestConfig, source_aspect: source ? source.aspect || source.width / source.height : 16 / 9 });
+      const result = await api('/api/mesh', { config: requestConfig, source_aspect: source ? source.aspect || source.width / source.height : 16 / 9,
+        ...(axisPreviewEnabled ? {axis_preview:{actual_bend_center_u:actualBendCenterU}} : {}) });
       if (serial !== meshSerial) return;
-      config = result.config; mesh = result.mesh; syncControls();
+      config = result.config; mesh = result.mesh; axisPreviewData = result.axis_preview || null; syncControls();
       const decorationURL = config.presentation === 'standee' ? result.decoration_url : null;
       for (const view of glViews) if (view.decorationURL !== decorationURL) view.clearDecoration();
-      for (const view of glViews) view.setMesh(mesh, config);
+      refreshPreviewMeshes();
       if (decorationURL) {
         $('mesh-status').textContent = '载入立牌装饰…';
         await loadDecoration(decorationURL, serial);
@@ -334,7 +380,7 @@
   }
   function busyImport(value, label = '') {
     importing = value; $('import-status').hidden = !value; $('import-status').querySelector('span').textContent = label;
-    for (const id of ['pick-file', 'import-path', 'calibration', 'brightness-calibration', 'empty-import']) $(id).disabled = value;
+    for (const id of ['pick-file', 'import-path', 'calibration', 'brightness-calibration', 'axis-calibration', 'empty-import']) $(id).disabled = value;
     updateRenderButton();
   }
   async function importRequest(path, body) {
@@ -592,8 +638,29 @@
     $('source-path').addEventListener('keydown', event => { if (event.key === 'Enter') $('import-path').click(); });
     $('calibration').onclick = action(() => importRequest('/api/calibration', {}));
     $('brightness-calibration').onclick = action(() => importRequest('/api/brightness-calibration', {}));
+    $('axis-calibration').onclick = action(() => importRequest('/api/axis-calibration', {}));
     $('brightness-enabled').onchange = () => { config.brightness_enabled = $('brightness-enabled').checked; scheduleMesh(true); };
     $('simulate-angle').onchange = () => { simulateAngle = $('simulate-angle').checked; for (const view of glViews) if (!view.unfolded) view.draw(); };
+    $('axis-preview-enabled').onchange = () => {
+      axisPreviewEnabled = $('axis-preview-enabled').checked; syncAxisControls(); refreshPreviewMeshes(); scheduleMesh(true);
+    };
+    const actualAxisChanged = value => {
+      if (!Number.isFinite(Number(value)) || value === '') return syncAxisControls();
+      actualBendCenterU = axisCenter(config, Number(value) / 100); syncAxisControls(); scheduleMesh();
+    };
+    $('range-actual-bend-center').addEventListener('input', () => actualAxisChanged($('range-actual-bend-center').value));
+    $('number-actual-bend-center').addEventListener('change', () => actualAxisChanged($('number-actual-bend-center').value));
+    $('axis-start').onclick = () => {
+      actualBendCenterU = config.bend_center_u; axisPreviewEnabled = true; comparison = 'corrected';
+      document.querySelectorAll('[data-mode]').forEach(button => button.classList.toggle('active', button.dataset.mode === comparison));
+      syncAxisControls(); scheduleMesh(true);
+    };
+    $('axis-apply').onclick = () => {
+      if (!axisPreviewEnabled) return;
+      config = frameForMode({...config, bend_center_u:actualBendCenterU}, config.fit || 'cover');
+      comparison = 'corrected'; document.querySelectorAll('[data-mode]').forEach(button => button.classList.toggle('active', button.dataset.mode === comparison));
+      syncControls(); scheduleMesh(true); notify('已将人工估计的实际轴应用到渲染并重置取景；请重新导出后在实屏验证。');
+    };
     $('drop-zone').onclick = () => { if (!importing) $('file-input').click(); };
     $('drop-zone').onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); $('drop-zone').click(); } };
     $('file-input').onchange = () => { uploadFile($('file-input').files[0]); $('file-input').value = ''; };
@@ -618,8 +685,7 @@
     $('toggle-overlay').onclick = () => { overlayVisible = !overlayVisible; $('toggle-overlay').classList.toggle('active', overlayVisible); $('toggle-overlay').setAttribute('aria-pressed', String(overlayVisible)); drawOverlay(); };
     document.querySelectorAll('[data-mode]').forEach(button => { button.onclick = () => {
       comparison = button.dataset.mode; document.querySelectorAll('[data-mode]').forEach(item => item.classList.toggle('active', item === button));
-      $('comparison-caption').textContent = comparison === 'corrected' ? '● 几何预变形后，从设定视点观看的效果' : '未做几何预变形，亮度补偿仍按实验开关应用';
-      if (mesh) for (const view of glViews) view.setMesh(mesh, config);
+      refreshPreviewMeshes();
     }; });
     const overlay = $('source-overlay');
     overlay.addEventListener('pointerdown', event => { if (!source || !mesh || !overlayVisible || event.button !== 0) return; overlay.setPointerCapture(event.pointerId); drag = { x: event.clientX, y: event.clientY, panX: config.pan_x, panY: config.pan_y, rect: sourceRect(), span: meshUVSpan(mesh.uv) }; });

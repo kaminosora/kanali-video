@@ -9,3 +9,14 @@
 
 .capability-feedback{margin-top:10px}.capability-feedback .text-button{color:#82b9af;font-size:10px;padding:7px 0}.capability-feedback .field-hint{line-height:1.9;margin-top:1px}.budget-card{margin-top:14px;border:1px solid #2a4744;border-radius:5px;background:#132320;padding:11px}.budget-card .eyebrow{font-size:8px;color:#698e86;letter-spacing:1px}.budget-card p{font-size:10px;line-height:1.9;color:#a1c4b9;margin-top:5px;white-space:pre-line}.job .job-result{font-size:9px;color:#88b9ac;margin:5px 0}.acceleration-fields select:disabled{opacity:.6}.acceleration-fields option:disabled{color:#536571}@media(max-width:1190px) and (min-width:741px){.export-panel .budget-card,.export-panel .capability-feedback,.export-panel .acceleration-fields{grid-column:1/-1}}
 .brightness-settings{border-top:1px solid var(--edge);padding-top:14px;margin-top:8px}.brightness-settings>summary{font-size:11px;color:#b7c9c8;cursor:pointer}.brightness-toggle,.brightness-simulation{display:flex;align-items:center;gap:7px;font-size:10px;color:#a1c4b9}.brightness-toggle{margin:14px 0 8px}.brightness-toggle input,.brightness-simulation input{width:auto;margin:0;accent-color:#88cdbd}.brightness-settings .parameter{margin-top:15px}.brightness-summary{white-space:pre-line;font-size:10px;line-height:1.9;color:#8aa7a3;background:#10201e;border-radius:4px;padding:9px;margin-top:12px}.brightness-settings .text-button{font-size:10px}.brightness-simulation{flex-wrap:wrap;padding:0 15px 14px}.brightness-simulation small{font-size:9px;color:#718b99}
+.axis-actions{display:flex;flex-direction:column;gap:8px;margin:12px 0}.axis-actions .button{font-size:10px;white-space:normal;line-height:1.7}.axis-settings input:disabled{opacity:.5}.axis-settings .parameter-value input{min-width:66px}
+/* Keep calibration controls beside their live result on multi-column screens.
+   Stay in document flow: at 741–1190px the export column occupies the next grid
+   row and must scroll into view without pinned controls overlapping it. */
+@media(min-width:741px){
+  .settings-column{max-height:calc(100dvh - 28px);overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+  .settings-column>.panel{flex-shrink:0}
+  .workspace:has(.brightness-settings[open]) .preview-column{max-height:calc(100dvh - 28px);overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;display:flex;flex-direction:column;gap:18px}
+  .workspace:has(.brightness-settings[open]) .preview-column>*{flex-shrink:0}
+  .workspace:has(.brightness-settings[open]) .secondary-previews{order:-1;margin-top:0}
+}

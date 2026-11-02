@@ -50,7 +50,24 @@
       return {brightness_enabled:config.brightness_enabled === true,
         brightness_floor:value('brightness_floor',.6,0,1),
         brightness_power:value('brightness_power',2,.25,8),
+        brightness_shoulder:value('brightness_shoulder',1,.25,8),
         brightness_strength:value('brightness_strength',1,0,1)};
+    },
+    axisLimits(config = {}) {
+      const width = Number(config.screen_width_mm) > 0 ? Number(config.screen_width_mm) : 152.65185185185183;
+      const length = Number.isFinite(Number(config.curve_length_mm)) ? Number(config.curve_length_mm) : 14;
+      const margin = config.bend_deg === 0 ? .001 : Math.max(.001, Math.min(.5, length / (2 * width)));
+      return [margin, 1 - margin];
+    },
+    axisCenter(config, value) {
+      const [low, high] = core.axisLimits(config);
+      return Math.max(low, Math.min(high, typeof value === 'number' && Number.isFinite(value) ? value : .5));
+    },
+    axisSummaryLabel(config, actualCenter, width, enabled) {
+      const rendered = core.axisCenter(config, config.bend_center_u), actual = core.axisCenter(config, actualCenter);
+      const delta = (actual - rendered) * width, sign = delta > 0 ? '+' : '';
+      const range = core.axisLimits(config).map(n => `${(100*n).toFixed(2)}%`).join('–');
+      return `渲染轴 ${(rendered*100).toFixed(2)}% / ${(rendered*width).toFixed(1)} px\n模拟实际轴 ${(actual*100).toFixed(2)}% / ${(actual*width).toFixed(1)} px\n实际 − 渲染：${sign}${((actual-rendered)*100).toFixed(2)} 个百分点 / ${sign}${delta.toFixed(1)} px\n允许范围 ${range}${enabled ? '' : '\n错位模拟未开启'}`;
     },
     brightnessSummaryLabel(summary) {
       if (!summary) return '调整后显示视角范围、预测亮度与补偿倍率。';

@@ -17,7 +17,7 @@ import threading
 
 import numpy as np
 
-from mapper.geometry import mapping_mesh
+from mapper.geometry import render_mapping_mesh as mapping_mesh
 
 
 class GpuUnavailableError(RuntimeError):
