@@ -57,7 +57,9 @@ def main():
                 if first is None:
                     first = array
                 last = array; times.append(float(frame.time)); count += 1
-            assert (stream.width, stream.height) == (2240, 1080)
+            assert (stream.width, stream.height) == (2160, 1080)
+            assert stream.sample_aspect_ratio == 1, stream.sample_aspect_ratio
+            assert stream.width * stream.sample_aspect_ratio / stream.height == 2
             assert count == job["total_frames"], (count, job)
             rate = float(stream.average_rate)
             assert 0 < rate <= 60

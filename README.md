@@ -1,6 +1,6 @@
 # PANORAMA Mapper · 曲面视频工作台
 
-把普通视频预变形为 TRYX PANORAMA SE 的 **2240×1080** 展开画面，从指定眼位观看时恢复平面构图。支持铺满裁切、完整视频立牌、拖动取景、GPU 映射、Blender 工程与严格小于 **500,000,000 字节** 的 MP4 交付。
+把普通视频预变形为适合 TRYX PANORAMA SE / KANALI 上传的 **2160×1080（2:1）** 展开画面，从指定眼位观看时恢复平面构图。支持铺满裁切、完整视频立牌、拖动取景、GPU 映射、Blender 工程与严格小于 **500,000,000 字节** 的 MP4 交付。
 
 An offline, single-view anamorphic video mapper for the TRYX PANORAMA SE curved display. Chinese local UI, adjustable viewpoint/crop, GPU acceleration, editable Blender scenes and a strict 500 MB MP4 delivery gate. Independent community project; not an official TRYX product.
 
@@ -25,6 +25,14 @@ An offline, single-view anamorphic video mapper for the TRYX PANORAMA SE curved 
 7. KANALI 选整个屏幕的单画布显示，导入完成卡片中的 MP4，检查没有再次裁切、缩放或附加叠加。
 
 输出无音轨，最高 60 fps，自动保留源有理帧率。预览是缩小代理，最终导出使用完整素材。普通二维视频不会获得真实双目深度；头部离开设计眼位后可能出现拉伸和折感。铺满约束不会去掉原片内部黑边，需要主动放大裁切。
+
+## 上传画布与旧版成片
+
+v1.1.1 起，以用户实际 KANALI 的 **2:1 上传窗口**为准，展开预览、GPU/Blender 渲染、MP4 和归档母版统一使用 **2160×1080、方形像素（SAR 1:1）**。官网面板标称的 2240×1080 与软件上传画布是不同概念；不能直接用前者决定后者。
+
+v1.1.0 的 2240×1080 成片不要再交给 KANALI 居中裁切，这会丢失曲面映射两端的 UV 范围。优先用原素材和已保存的参数在新版重新导出；若只保留了旧成片，可将**整幅展开图缩放**为 2160×1080 并设 SAR 为 1:1，随后重新检查 500 MB 限制。不要把已预变形的成片再次作为普通素材做一遍曲面映射。
+
+上传栅格改为 2:1 不会自动改动曲面的毫米尺寸、G2 过渡或眼位。已有校准参数仍保留，实际物理尺寸继续按测量调整。
 
 ## 500 MB 约束
 
@@ -65,6 +73,6 @@ python -m unittest discover -s tests
 node --test web/*.test.cjs
 ```
 
-测试按环境变量、PATH 或本地设置定位 FFmpeg。启动面板后运行 `python scripts/verify_pipeline.py` 可做合成素材真实导出回归。发布检查见 [v1.1.0 验收](docs/VALIDATION-1.1.0.md)，构建见 `python scripts/build_release.py --help`。
+测试按环境变量、PATH 或本地设置定位 FFmpeg。启动面板后运行 `python scripts/verify_pipeline.py` 可做合成素材真实导出回归。发布检查见 [v1.1.1 验收](docs/VALIDATION-1.1.1.md)，构建见 `python scripts/build_release.py --help`。
 
 服务只监听 `127.0.0.1`，媒体不上传云端。自有源码采用 MIT；第三方组件各自许可证见 [声明](THIRD_PARTY_NOTICES.md)。

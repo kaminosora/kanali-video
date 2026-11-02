@@ -189,7 +189,7 @@ void main() {
 class GpuMapper:
     """Render the shared 512×128 SourceUV mesh to a native or supersampled FBO.
 
-    ``width`` and ``height`` are the actual output raster (e.g. 4480×2160 for 2×).
+    ``width`` and ``height`` are the actual output raster (e.g. 4320×2160 for 2×).
     Returned arrays are C-contiguous, read-only views over owned immutable bytes.
     Encoding and final downsampling are deliberately outside this class.
     """

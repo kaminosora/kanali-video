@@ -23,7 +23,7 @@ from mapper.paths import app_root, worker_command
 
 ROOT = app_root()
 sys.path.insert(0, str(ROOT / ".deps"))
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 LOGGER = logging.getLogger("panorama.server")
 LOGGER.addHandler(logging.NullHandler())
 CLIENT_DISCONNECTS = (ConnectionAbortedError, ConnectionResetError, BrokenPipeError)
@@ -150,7 +150,9 @@ class Application:
 
     def state(self):
         from mapper.geometry import normalize_config
+        from mapper.output import profile
         return {"version": VERSION, "config": self.config, "defaults": normalize_config({}),
+                "output_profile": profile(),
                 "source": self.source_public(self.sources[self.active_source]) if self.active_source else None,
                 "sources": [self.source_public(s) for s in self.sources.values()], "jobs": self.jobs.list(),
                 "presets": sorted(p.stem for p in self.presets.glob("*.json")),
@@ -184,8 +186,9 @@ class Application:
         return self.source_public(source)
 
     def calibration(self):
+        from mapper.output import WIDTH, HEIGHT
         from mapper.media import create_calibration
-        path = ROOT / "examples" / "calibration-source.png"
+        path = ROOT / "examples" / f"calibration-{WIDTH}x{HEIGHT}.png"
         path.parent.mkdir(exist_ok=True)
         if not path.exists():
             create_calibration(path)

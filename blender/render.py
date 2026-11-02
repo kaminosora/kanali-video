@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT))
 from mapper.geometry import mapping_mesh, normalize_config, camera_basis
 from mapper.encoding import encoder_command
 from mapper.storage import write_json as save_json
+from mapper.output import ASPECT, render_size
 
 
 def emission_material(name, image, frames, uv_name, decoration_path=None, source_aspect=1):
@@ -120,8 +121,8 @@ def build(settings):
     for obj in list(atlas.objects):
         bpy.data.objects.remove(obj, do_unlink=True)
     scale = options["supersample"]
-    setup_scene(atlas, 2240 * scale, 1080 * scale, options)
-    aspect = 2240 / 1080
+    setup_scene(atlas, *render_size(scale), options)
+    aspect = ASPECT
     vertices = [((u-.5)*aspect, v-.5, 0) for u, v in mesh["atlas"]]
     mesh_object(atlas, "Unfolded_Pixel_Surface", vertices, mesh["triangles"], mesh["atlas"], mesh["uv"], material)
     camera = add_camera(atlas, "Export_Orthographic", (0, 0, 3))

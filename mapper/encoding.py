@@ -4,6 +4,8 @@ Quality numbers are backend-specific, not promises of equal quality or size.
 The delivery module's actual-byte gate remains mandatory for compatible MP4.
 """
 
+from mapper.output import WIDTH, HEIGHT
+
 
 def encoder_args(encoder='libx264', options=None):
     """Return the same codec arguments used for capability probes and encoding.
@@ -52,10 +54,10 @@ def encoder_command(ffmpeg_path, output_path, options):
         raise ValueError('input_format must be image2pipe or rawvideo')
     command += ['-framerate', rate, '-i', 'pipe:0', '-an', '-frames:v', str(options['frames'])]
     if options["quality"] == "high":
-        command += ["-vf", "scale=2240:1080:flags=lanczos:out_color_matrix=bt709:out_range=tv,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709"]
+        command += ["-vf", f"scale={WIDTH}:{HEIGHT}:flags=lanczos:out_color_matrix=bt709:out_range=tv,setsar=1,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709"]
         command += encoder_args(options.get('encoder', 'libx264'), options)
         command += ["-color_range", "tv",
                     "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-movflags", "+faststart"]
     else:
-        command += ["-vf", "scale=2240:1080:flags=lanczos", "-c:v", "ffv1", "-level", "3", "-pix_fmt", "gbrp16le", "-slicecrc", "1"]
+        command += ["-vf", f"scale={WIDTH}:{HEIGHT}:flags=lanczos,setsar=1", "-c:v", "ffv1", "-level", "3", "-pix_fmt", "gbrp16le", "-slicecrc", "1"]
     return command + [str(output_path)]

@@ -12,7 +12,7 @@
 <body>
   <header class="app-header">
     <a class="brand" href="/" aria-label="PANORAMA Mapper 首页"><span class="brand-mark">P<span></span></span><span>PANORAMA <b>MAPPER</b><small>曲面视频工作台</small></span></a>
-    <div class="header-meta"><span class="local-tag"><i></i> 本地处理</span><span class="native-tag">2240 × 1080 <span> / </span> ≤ 60 FPS</span><span id="connection" class="connection">正在连接…</span></div>
+    <div class="header-meta"><span class="local-tag"><i></i> 本地处理</span><span class="native-tag" id="output-header">2160 × 1080 / ≤ 60 FPS</span><span id="connection" class="connection">正在连接…</span></div>
   </header>
 
   <main class="workspace">
@@ -57,14 +57,14 @@
 
       <div class="secondary-previews">
         <section class="panel result-view"><div class="preview-heading"><div><span class="eyebrow">OBSERVER VIEW</span><h2>目标视点效果</h2></div><div class="segmented small" id="comparison"><button data-mode="corrected" class="active">已校正</button><button data-mode="uncorrected">未校正</button></div></div><div class="gl-stage"><canvas id="observer-preview" aria-label="目标观察位置的校正效果预览"></canvas><span class="canvas-empty">导入素材后显示</span><span class="stage-corner" id="view-caption">45° / 10° / 650 mm</span></div><p class="preview-caption" id="comparison-caption"><span class="cyan-dot"></span>预变形后，从设定视点观看的效果</p></section>
-        <section class="panel result-view"><div class="preview-heading"><div><span class="eyebrow">UNFOLDED OUTPUT</span><h2>曲面展开图</h2></div><span class="resolution-pill">2240 × 1080</span></div><div class="gl-stage atlas-stage"><canvas id="atlas-preview" aria-label="输出展开图的实时预览"></canvas><span class="canvas-empty">导入素材后显示</span><span class="stage-corner">屏幕展开 · 供设备播放</span></div><p class="preview-caption">展开图的变形用于抵消曲面与观察透视</p></section>
+        <section class="panel result-view"><div class="preview-heading"><div><span class="eyebrow">UNFOLDED OUTPUT</span><h2>曲面展开图</h2></div><span class="resolution-pill" id="output-resolution">2160 × 1080</span></div><div class="gl-stage atlas-stage"><canvas id="atlas-preview" aria-label="输出展开图的实时预览"></canvas><span class="canvas-empty">导入素材后显示</span><span class="stage-corner">屏幕展开 · 供设备播放</span></div><p class="preview-caption">展开图的变形用于抵消曲面与观察透视</p></section>
       </div>
       <div class="workspace-footnote"><span><i></i> 共享几何网格 · WebGL 实时预览</span><span>素材与输出均保存在本项目内</span></div>
     </div>
 
     <aside class="export-column">
       <section class="panel export-panel"><div class="section-title"><span class="step">03</span><h2>渲染导出</h2><span class="eyebrow">EXPORT</span></div>
-        <div class="output-spec"><div class="output-icon">↗</div><div><strong>2240 <span>×</span> 1080</strong><small>PANORAMA 原生展开画幅</small></div></div>
+        <div class="output-spec"><div class="output-icon">↗</div><div><strong id="output-dimensions">2160 × 1080</strong><small id="output-profile-label">KANALI 2:1 上传画布</small></div></div>
         <div class="export-fields"><label class="field-label">输出名称<input id="output-name" type="text" value="panorama" maxlength="100" placeholder="panorama"></label>
         <div class="field-label">导出区间 <span class="unit-label">秒</span></div><div class="trim-inputs"><label><span>入点</span><input id="trim-start" type="number" min="0" step="0.001" value="0" aria-label="入点秒数"><button id="set-in" title="以当前播放位置设为入点">设为当前</button></label><span class="trim-dash">—</span><label><span>出点</span><input id="trim-end" type="number" min="0" step="0.001" value="5" aria-label="出点秒数"><button id="set-out" title="以当前播放位置设为出点">设为当前</button></label></div><p id="trim-duration" class="field-hint">区间时长 5.000 秒</p>
         <label class="field-label">文件格式<select id="quality"><option value="high">高质量 MP4 · H.264 / 自动体积控制</option><option value="master">无损 RGB 母版 · FFV1 / MKV</option></select></label><p class="field-hint" id="quality-hint">兼容播放格式 · SDR BT.709 · 严格小于 500 MB</p>

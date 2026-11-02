@@ -82,8 +82,14 @@ def main():
                 assert output.is_relative_to(folder/'outputs')
                 assert 0<output.stat().st_size<500_000_000
                 assert Path(current['blend_path']).is_file()
+                decoded=subprocess.run([configured['tools']['ffmpeg']['path'],'-hide_banner','-nostdin',
+                    '-i',str(output),'-frames:v','1','-vf','showinfo','-f','null','-'],capture_output=True,
+                    encoding='utf-8',errors='replace',timeout=30,creationflags=flags)
+                assert decoded.returncode==0,decoded.stderr[-1500:]
+                assert 'sar:1/1 s:2160x1080' in decoded.stderr,decoded.stderr[-2500:]
                 results.append(dict(source_kind=media['kind'],renderer=current['backend']['renderer'],encoder=current['backend']['encoder'],
-                                    size_bytes=output.stat().st_size,frames=current['total_frames']))
+                                    size_bytes=output.stat().st_size,frames=current['total_frames'],
+                                    width=2160,height=1080,sar='1:1',dar='2:1'))
             report={'version':state['version'],'bundled_python':True,'system_python_path_removed':True,
                     'relocated_unicode_space_directory':True,'media_bootstrap':True,'estimate':estimate,'exports':results}
             (folder/'acceptance.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')

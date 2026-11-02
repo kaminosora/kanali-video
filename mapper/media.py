@@ -405,37 +405,38 @@ def prepare_preview(path: str | Path, cache_dir: str | Path,
 
 
 def create_calibration(path: str | Path) -> str:
-    """Generate labelled 2240x1080 SDR alignment artwork with asymmetric corners."""
+    """Generate KANALI 2:1 SDR alignment artwork with asymmetric corners."""
+    from mapper.output import WIDTH as width, HEIGHT as height
     path = Path(path).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         raise FileExistsError(f'不会覆盖已有文件：{path}')
-    image = Image.new('RGB', (2240, 1080), '#111827')
+    image = Image.new('RGB', (width, height), '#111827')
     draw = ImageDraw.Draw(image)
     title = ImageFont.load_default(size=38)
     label = ImageFont.load_default(size=24)
     small = ImageFont.load_default(size=18)
-    for x in range(0, 2241, 80):
-        draw.line((x, 0, x, 1079), fill='#45546a', width=2)
-    for y in range(0, 1081, 80):
-        draw.line((0, y, 2239, y), fill='#45546a', width=2)
-    draw.line((1120, 0, 1120, 1079), fill='#ffffff', width=4)
-    draw.line((0, 540, 2239, 540), fill='#ffffff', width=4)
-    for cx in (280, 840, 1400, 1960):
+    for x in range(0, width + 1, 80):
+        draw.line((x, 0, x, height - 1), fill='#45546a', width=2)
+    for y in range(0, height + 1, 80):
+        draw.line((0, y, width - 1, y), fill='#45546a', width=2)
+    draw.line((width // 2, 0, width // 2, height - 1), fill='#ffffff', width=4)
+    draw.line((0, 540, width - 1, 540), fill='#ffffff', width=4)
+    for cx in (width * (2 * i + 1) // 8 for i in range(4)):
         draw.ellipse((cx - 140, 400, cx + 140, 680), outline='#e2e8f0', width=5)
         draw.line((cx - 150, 540, cx + 150, 540), fill='#ffffff', width=2)
         draw.text((cx - 70, 700), f'({cx}, 540)', font=label, fill='white')
-    for x, y, colour, text in ((16, 16, '#ef4444', 'TOP LEFT'), (1960, 16, '#22c55e', 'TOP RIGHT'),
-                               (16, 980, '#3b82f6', 'BOTTOM LEFT'), (1960, 980, '#facc15', 'BOTTOM RIGHT')):
+    for x, y, colour, text in ((16, 16, '#ef4444', 'TOP LEFT'), (width - 280, 16, '#22c55e', 'TOP RIGHT'),
+                               (16, 980, '#3b82f6', 'BOTTOM LEFT'), (width - 280, 980, '#facc15', 'BOTTOM RIGHT')):
         draw.rectangle((x, y, x + 260, y + 84), fill=colour)
         draw.text((x + 12, y + 28), text, font=label, fill='black')
     draw.text((680, 115), 'PANORAMA SE - VIEWPOINT CALIBRATION', font=title, fill='white')
-    draw.text((740, 170), '2240 x 1080 | 80 px grid | circles must look round', font=label, fill='#cbd5e1')
-    for x in range(160, 2240, 160):
+    draw.text((680, 170), f'{width} x {height} | 2:1 upload | circles must look round', font=label, fill='#cbd5e1')
+    for x in range(160, width, 160):
         draw.text((x + 5, 250), f'X={x}', font=small, fill='#cbd5e1')
     for y in range(320, 960, 160):
         draw.text((12, y + 5), f'Y={y}', font=small, fill='#cbd5e1')
-    draw.rectangle((2, 2, 2237, 1077), outline='white', width=5)
+    draw.rectangle((2, 2, width - 3, height - 3), outline='white', width=5)
     image.save(path, 'PNG')
     image.close()
     return str(path)

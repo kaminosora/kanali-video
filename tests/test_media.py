@@ -297,14 +297,14 @@ class MediaTests(unittest.TestCase):
             with self.subTest(path=path.name), self.assertRaises((ValueError, FileNotFoundError)):
                 media.probe_media(path)
 
-    def test_calibration_contains_2240x1080_grid_and_asymmetric_colour_marks(self):
+    def test_calibration_contains_2160x1080_grid_and_asymmetric_colour_marks(self):
         """Catches blank or wrong-size calibration output and lost orientation cues."""
         path = self.directory / 'calibration 中文.png'
         media.create_calibration(path)
         with Image.open(path) as image:
-            self.assertEqual(image.size, (2240, 1080))
+            self.assertEqual(image.size, (2160, 1080))
             self.assertGreater(len(image.getcolors(maxcolors=1_000_000)), 20)
-            self.assertNotEqual(image.getpixel((40, 40)), image.getpixel((2200, 40)))
+            self.assertNotEqual(image.getpixel((40, 40)), image.getpixel((2120, 40)))
         self.assertEqual(media.probe_media(path)['kind'], 'image')
 
 

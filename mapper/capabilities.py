@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 
 from mapper.paths import app_root, worker_command
+from mapper.output import WIDTH, HEIGHT
 
 ENCODERS = ('h264_nvenc','h264_qsv','h264_amf','libx264')
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
@@ -50,7 +51,7 @@ def _probe_encoder(ffmpeg_path, encoder):
         with tempfile.TemporaryDirectory(prefix='probe-',dir=cache) as directory:
             output=Path(directory)/'probe.mp4'
             command=[str(ffmpeg_path),'-hide_banner','-loglevel','error','-nostdin','-y',
-                     '-f','lavfi','-i','color=c=black:s=2240x1080:r=60','-frames:v','2','-an',
+                     '-f','lavfi','-i',f'color=c=black:s={WIDTH}x{HEIGHT}:r=60','-frames:v','2','-an',
                      *encoder_args(encoder),str(output)]
             process=subprocess.run(command,capture_output=True,timeout=12,creationflags=NO_WINDOW)
             ok=process.returncode==0 and output.is_file() and output.stat().st_size>0

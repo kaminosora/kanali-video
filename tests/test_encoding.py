@@ -32,7 +32,9 @@ class EncodingTests(unittest.TestCase):
             with av.open(str(output)) as container:
                 stream = container.streams.video[0]
                 frames = list(container.decode(stream))
-                self.assertEqual((stream.width, stream.height, len(frames)), (2240, 1080, 2))
+                self.assertEqual((stream.width, stream.height, len(frames)), (2160, 1080, 2))
+                self.assertEqual(stream.sample_aspect_ratio, 1)
+                self.assertEqual(stream.display_aspect_ratio, 2)
                 self.assertEqual(str(stream.average_rate), '30000/1001')
                 self.assertEqual((stream.codec_context.colorspace, stream.codec_context.color_primaries,
                                   stream.codec_context.color_trc), (1, 1, 1))
@@ -82,13 +84,15 @@ class EncodingTests(unittest.TestCase):
             options = {"fps_num": 30000, "fps_den": 1001, "frames": 2, "quality": "high"}
             command = encoder_command(FFMPEG, output, options)
             png = io.BytesIO()
-            Image.new("RGB", (64, 32), (120, 80, 40)).save(png, format="PNG")
+            Image.new("RGB", (64, 36), (120, 80, 40)).save(png, format="PNG")
             result = subprocess.run(command, input=png.getvalue()*2, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr.decode(errors="replace"))
             with av.open(str(output)) as container:
                 stream = container.streams.video[0]
                 frames = list(container.decode(stream))
-                self.assertEqual((stream.width, stream.height), (2240, 1080))
+                self.assertEqual((stream.width, stream.height), (2160, 1080))
+                self.assertEqual(stream.sample_aspect_ratio, 1)
+                self.assertEqual(stream.display_aspect_ratio, 2)
                 self.assertEqual(str(stream.average_rate), "30000/1001")
                 self.assertEqual(len(frames), 2)
                 ctx = stream.codec_context

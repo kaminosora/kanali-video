@@ -29,6 +29,7 @@ def _number(value, label):
 
 
 def validate_export(raw: dict, source: dict) -> dict:
+    from mapper.output import WIDTH, HEIGHT
     start = _number(raw.get("start", 0), "开始时间")
     default_end = 5 if source["kind"] == "image" else source["duration"]
     end = _number(default_end if raw.get("end") is None else raw["end"], "结束时间")
@@ -65,7 +66,7 @@ def validate_export(raw: dict, source: dict) -> dict:
             "fps_num": rate.numerator, "fps_den": rate.denominator,
             "frames": max(1, math.ceil((end-start) * float(rate) - 1e-9)),
             "quality": quality, "supersample": int(supersample), "name": name,
-            'renderer':renderer,'encoder':encoder}
+            'renderer':renderer,'encoder':encoder,'output_width':WIDTH,'output_height':HEIGHT}
 
 
 def read_ffmpeg_progress(path):

@@ -7,6 +7,7 @@ import threading
 import time
 
 from mapper.storage import write_json
+from mapper.output import render_size
 
 
 def render_gpu(settings_path):
@@ -17,7 +18,7 @@ def render_gpu(settings_path):
     from mapper.encoding import encoder_command
     settings=json.loads(Path(settings_path).read_text(encoding='utf-8'))
     folder=Path(settings['directory']);options=dict(settings['options'])
-    width,height=2240*options['supersample'],1080*options['supersample']
+    width,height=render_size(options['supersample'])
     options.update(input_format='rawvideo',width=width,height=height)
     candidate=Path(settings['candidate_path'])
     partial=candidate.with_name(candidate.stem+'.partial.mp4')

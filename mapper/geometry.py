@@ -16,7 +16,8 @@ import numpy as np
 
 DEFAULT_CONFIG = {
     "screen_height_mm": 73.6,
-    "screen_width_mm": 73.6 * 2240 / 1080,
+    # Physical starting estimate; do not derive millimetres from KANALI's upload raster.
+    "screen_width_mm": 152.65185185185183,
     "bend_deg": 90.0,
     "curve_length_mm": 14.0,
     "view_azimuth_deg": 45.0,

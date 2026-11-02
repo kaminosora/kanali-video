@@ -23,6 +23,19 @@
   let environmentState = null, environmentPending = false, environmentDirty = false;
   let capabilitiesState = null, capabilitiesPending = false, capabilitiesPath = null, capabilitiesRequested = false;
   let estimateTimer, estimateSerial = 0, previousQuality = 'high', highPreferences = {renderer:'auto',encoder:'auto'};
+  let outputProfile = {width:2160,height:1080,aspect:2,label:'KANALI 2:1'};
+
+  function applyOutputProfile(value) {
+    const valid = value && Number.isSafeInteger(value.width) && value.width > 0 && Number.isSafeInteger(value.height) && value.height > 0;
+    outputProfile = valid
+      ? {width:value.width,height:value.height,aspect:value.width/value.height,label:value.label || 'KANALI 2:1'}
+      : {width:2160,height:1080,aspect:2,label:'KANALI 2:1'};
+    const dimensions = `${outputProfile.width} × ${outputProfile.height}`;
+    const labels = {'output-header':`${dimensions} / ≤ 60 FPS`,'output-resolution':dimensions,
+                    'output-dimensions':dimensions,'output-profile-label':`${outputProfile.label} 上传画布`};
+    for (const [id,text] of Object.entries(labels)) if ($(id)) $(id).textContent = text;
+    for (const view of glViews) if (view.unfolded) { view.aspect = outputProfile.aspect; view.draw(); }
+  }
 
   function notify(message, error = false) {
     $('toast').textContent = message;
@@ -178,7 +191,7 @@
       this.decorationDomain = decorationDomain(source ? source.aspect || source.width / source.height : 16 / 9);
       const bounds = this.unfolded ? [0, 0, 1, 1] : data.bounds;
       const width = Math.max(0.00001, bounds[2] - bounds[0]), height = Math.max(0.00001, bounds[3] - bounds[1]);
-      this.aspect = this.unfolded ? 2240 / 1080 : width / height;
+      this.aspect = this.unfolded ? outputProfile.aspect : width / height;
       const coordinates = this.unfolded || comparison === 'corrected' ? data.uv : data.atlas;
       // Deindexing also supports meshes above WebGL1's unsigned-short index limit.
       const position = new Float32Array(data.triangles.length * 6), uv = new Float32Array(position.length);
@@ -405,6 +418,7 @@
         if (jobsDisconnected) {
           const state = await api('/api/state', undefined, { signal: controller.signal });
           sessionToken = state.session_token; connectionReadyLabel = `LOCAL · ${state.version || 'READY'}`;
+          applyOutputProfile(state.output_profile);
         }
         setJobsConnection(true); renderJobs(result.jobs);
       } catch (error) { setJobsConnection(false); throw error; }
@@ -610,6 +624,7 @@
     catch (error) { notify(error.message, true); }
     try {
       const state = await api('/api/state'); sessionToken = state.session_token; defaults = { presentation: 'plain', ...(state.defaults || state.config) }; config = { presentation: 'plain', ...state.config };
+      applyOutputProfile(state.output_profile);
       connectionReadyLabel = `LOCAL · ${state.version || 'READY'}`; $('connection').textContent = connectionReadyLabel; $('connection').classList.remove('offline');
       $('blender-path').textContent = state.blender_path || '未找到 Blender'; $('ffmpeg-path').textContent = state.ffmpeg_path || '未找到 FFmpeg'; $('output-dir').textContent = state.output_dir || '项目输出目录';
       populatePresets(state.presets || []); renderJobs(state.jobs || []); syncControls();

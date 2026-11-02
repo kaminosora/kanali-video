@@ -4,7 +4,9 @@ All paths relative to same localhost origin. No CDN. JSON POSTs require Content-
 
 ## State / sources
 
-GET /api/state -> {config, defaults, source:null|Source, sources:[Source], jobs:[Job], presets:[string], blender_path, ffmpeg_path, output_dir, session_token, version}.
+GET /api/state -> {config, defaults, output_profile, source:null|Source, sources:[Source], jobs:[Job], presets:[string], blender_path, ffmpeg_path, output_dir, session_token, version}.
+
+`output_profile = {width:2160,height:1080,aspect:2,label:'KANALI 2:1'}` is the upload raster contract. Unfolded preview and output labels use this profile. It is independent of physical screen millimetres and viewpoint calibration; observer-preview aspect still follows projected geometry.
 
 Source = {id,name,width,height,aspect,duration,fps,frame_count,preview_url,thumbnail_url,kind:'video'|'image', warnings:[string]}. The preview_url is a browser-friendly MP4 proxy for videos and PNG for images, prepared on import; the original is used for export.
 
@@ -47,7 +49,9 @@ Cover framing is constrained: zoom>=1, pan clamped to available crop margin. Ret
 ## Export
 
 POST /api/render {source_id,config,start:seconds,end:seconds|null,fps:0|number,quality:'high'|'master',supersample:1|2,name:string,renderer:'auto'|'gpu'|'blender',encoder:'auto'|'h264_nvenc'|'h264_qsv'|'h264_amf'|'libx264'} -> Job.
-fps0=auto rational source rate <=60; high=high-quality H.264 MP4 with strict actual-size gate below 500000000 bytes and automatic bounded two-pass x264 re-encoding when necessary; master=lossless FFV1 RGB16 MKV archival file (not KANALI delivery, no size cap). end defaults source duration, still image default5s; output fixed2240×1080. Unique per-job output folder; no overwrite. renderer/encoder default auto; master always Blender/FFV1.
+fps0=auto rational source rate <=60; high=high-quality H.264 MP4 with strict actual-size gate below 500000000 bytes and automatic bounded two-pass x264 re-encoding when necessary; master=lossless FFV1 RGB16 MKV archival file (not KANALI delivery, no size cap). end defaults source duration, still image default5s; output fixed 2160×1080, square pixels (SAR 1:1), DAR 2:1. Unique per-job output folder; no overwrite. renderer/encoder default auto; master always Blender/FFV1.
+
+Export validation adds `output_width:2160` and `output_height:1080` to the returned job's `options` and saved render settings. These record the current fixed upload profile; they are not caller-selectable render dimensions. Supersampling changes the internal raster, then reduces the full unfolded UV domain to the same final profile without cropping its sides. Do not infer `screen_width_mm` from these pixel dimensions.
 
 POST /api/estimate {source_id,start,end,fps,quality} -> {limit_bytes:500000000,target_bytes:480000000,budget_bitrate,frames,duration,enforced}. Duration reflects rounded output frames; estimate is not a file-size guarantee. Master returns enforced=false and budget_bitrate=null.
 
