@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>PANORAMA Mapper · 曲面视频工作台</title>
+  <link rel="stylesheet" href="/web/style.css">
+  <script defer src="/web/ui-core.js"></script>
+  <script defer src="/web/app.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <a class="brand" href="/" aria-label="PANORAMA Mapper 首页"><span class="brand-mark">P<span></span></span><span>PANORAMA <b>MAPPER</b><small>曲面视频工作台</small></span></a>
+    <div class="header-meta"><span class="local-tag"><i></i> 本地处理</span><span class="native-tag">2240 × 1080 <span> / </span> ≤ 60 FPS</span><span id="connection" class="connection">正在连接…</span></div>
+  </header>
+
+  <main class="workspace">
+    <aside class="settings-column">
+      <section class="panel source-panel">
+        <div class="section-title"><span class="step">01</span><h2>源素材</h2><span class="eyebrow">SOURCE</span></div>
+        <button id="pick-file" class="button primary import-button"><span>＋</span> 选择本地视频 / 图片</button>
+        <div class="drop-zone" id="drop-zone" tabindex="0" role="button" aria-label="上传视频或图片"><span class="upload-icon">↥</span><span>拖入素材，或点击上传</span><small>原文件保留，素材仅在本机处理</small></div>
+        <input type="file" id="file-input" accept="video/*,image/*" hidden>
+        <details class="path-details"><summary>通过文件路径导入</summary><div class="path-row"><input id="source-path" type="text" placeholder="E:\素材\视频.mp4" aria-label="素材绝对路径"><button id="import-path" class="icon-button" title="导入路径">↵</button></div></details>
+        <div id="import-status" class="import-status" hidden><span></span><progress max="100" value="0"></progress></div>
+        <div id="source-info" class="source-info"><span class="muted">尚未导入素材</span></div>
+        <button id="calibration" class="text-button">载入方向校准网格 <span>↗</span></button>
+      </section>
+
+      <section class="panel geometry-panel">
+        <div class="section-title"><span class="step">02</span><h2>几何与视点</h2><span class="eyebrow">MAPPING</span></div>
+        <div class="preset-row"><select id="presets" aria-label="载入预设"><option value="">载入参数预设…</option></select><button id="save-preset" class="icon-button" title="保存当前参数预设">＋</button></div>
+        <form id="preset-form" class="preset-form" hidden><input id="preset-name" maxlength="80" placeholder="输入预设名称" required aria-label="预设名称"><button class="button compact" type="submit">保存</button></form>
+        <div class="control-group"><h3>观察位置 <span>VIEWPOINT</span></h3>
+          <div id="view-controls"></div>
+          <p class="control-note">水平 45° = 两翼角平分线。俯视 10° 为初始估计，可按实际眼位调整。</p>
+        </div>
+        <details class="screen-settings" open><summary>屏幕曲面 <span class="estimate">估算 · 待校准</span></summary><div id="screen-controls"></div><p class="control-note">宽度为展开弧长。G2 连续过渡为几何估算，不代表厂家真实曲线。</p></details>
+        <button id="reset-geometry" class="text-button">恢复默认几何 <span>↺</span></button>
+      </section>
+    </aside>
+
+    <div class="preview-column">
+      <section class="panel source-view">
+        <div class="preview-heading"><div><span class="eyebrow">SOURCE MONITOR</span><h2>原片与可见区域</h2></div><div class="viewer-tools"><span class="live-badge" id="mesh-status">等待素材</span><button id="toggle-overlay" class="icon-button active" title="显示或隐藏可见区域轮廓" aria-pressed="true">▱</button></div></div>
+        <div class="source-stage" id="source-stage">
+          <video id="source-video" playsinline preload="auto" hidden></video><img id="source-image" alt="导入的源素材" hidden>
+          <canvas id="source-overlay" aria-label="源画面取景轮廓，可拖动和滚轮缩放"></canvas>
+          <div class="stage-empty" id="source-empty"><div class="screen-symbol"><span></span></div><h3>从一段画面开始</h3><p>导入视频或图片，实时查看曲面映射效果</p><button class="button" id="empty-import">选择素材 <span>↗</span></button></div>
+          <span class="stage-label" id="source-label" hidden>SOURCE</span><span class="stage-help" id="stage-help" hidden>拖动选择保留区域 · 滚轮缩放</span>
+        </div>
+        <div class="transport"><button id="play" class="play-button" title="播放 / 暂停" disabled aria-label="播放">▶</button><span id="current-time" class="time-display">00:00.000</span><input id="timeline" type="range" min="0" max="1" step="0.001" value="0" disabled aria-label="播放位置"><span id="duration" class="time-display muted">00:00.000</span><button id="mute" class="icon-button active" title="静音切换" aria-pressed="true">静音</button></div>
+        <div class="framing-bar"><div class="segmented" id="fit-controls"><button data-fit="cover" class="active" title="默认：裁切原片并铺满屏幕">铺满取景</button><button data-fit="contain" title="可选：完整视频配合边框、厚度感与底座">立牌小屏</button></div><label class="zoom-control">缩放 <input id="zoom" type="number" min="1" max="4" step="0.01" value="1"><span>×</span></label><button id="reset-frame" class="text-button">重置取景 ↺</button></div>
+        <div class="framing-guidance"><p id="framing-note">拖动选择保留区域，暗区为裁切内容。铺满模式自动限制边界，不增加画面外黑边；素材自带黑边不会自动去除。</p><p class="framing-limit" id="framing-limit">可移动范围取决于原片比例与曲面几何；部分影片需要先放大，才能上下移动取景。</p></div>
+      </section>
+
+      <div class="secondary-previews">
+        <section class="panel result-view"><div class="preview-heading"><div><span class="eyebrow">OBSERVER VIEW</span><h2>目标视点效果</h2></div><div class="segmented small" id="comparison"><button data-mode="corrected" class="active">已校正</button><button data-mode="uncorrected">未校正</button></div></div><div class="gl-stage"><canvas id="observer-preview" aria-label="目标观察位置的校正效果预览"></canvas><span class="canvas-empty">导入素材后显示</span><span class="stage-corner" id="view-caption">45° / 10° / 650 mm</span></div><p class="preview-caption" id="comparison-caption"><span class="cyan-dot"></span>预变形后，从设定视点观看的效果</p></section>
+        <section class="panel result-view"><div class="preview-heading"><div><span class="eyebrow">UNFOLDED OUTPUT</span><h2>曲面展开图</h2></div><span class="resolution-pill">2240 × 1080</span></div><div class="gl-stage atlas-stage"><canvas id="atlas-preview" aria-label="输出展开图的实时预览"></canvas><span class="canvas-empty">导入素材后显示</span><span class="stage-corner">屏幕展开 · 供设备播放</span></div><p class="preview-caption">展开图的变形用于抵消曲面与观察透视</p></section>
+      </div>
+      <div class="workspace-footnote"><span><i></i> 共享几何网格 · WebGL 实时预览</span><span>素材与输出均保存在本项目内</span></div>
+    </div>
+
+    <aside class="export-column">
+      <section class="panel export-panel"><div class="section-title"><span class="step">03</span><h2>渲染导出</h2><span class="eyebrow">EXPORT</span></div>
+        <div class="output-spec"><div class="output-icon">↗</div><div><strong>2240 <span>×</span> 1080</strong><small>PANORAMA 原生展开画幅</small></div></div>
+        <div class="export-fields"><label class="field-label">输出名称<input id="output-name" type="text" value="panorama" maxlength="100" placeholder="panorama"></label>
+        <div class="field-label">导出区间 <span class="unit-label">秒</span></div><div class="trim-inputs"><label><span>入点</span><input id="trim-start" type="number" min="0" step="0.001" value="0" aria-label="入点秒数"><button id="set-in" title="以当前播放位置设为入点">设为当前</button></label><span class="trim-dash">—</span><label><span>出点</span><input id="trim-end" type="number" min="0" step="0.001" value="5" aria-label="出点秒数"><button id="set-out" title="以当前播放位置设为出点">设为当前</button></label></div><p id="trim-duration" class="field-hint">区间时长 5.000 秒</p>
+        <label class="field-label">文件格式<select id="quality"><option value="high">高质量 MP4 · H.264 / 自动体积控制</option><option value="master">无损 RGB 母版 · FFV1 / MKV</option></select></label><p class="field-hint" id="quality-hint">兼容播放格式 · SDR BT.709 · 严格小于 500 MB</p>
+        <div class="two-fields"><label class="field-label">帧率<select id="fps"><option value="0">跟随源素材</option><option value="24">24 fps</option><option value="25">25 fps</option><option value="30">30 fps</option><option value="50">50 fps</option><option value="60">60 fps</option></select></label><label class="field-label">超采样<select id="supersample"><option value="1">1× 原生</option><option value="2" selected>2× 更细腻</option></select></label></div>
+        <div class="two-fields acceleration-fields"><label class="field-label">画面渲染<select id="renderer"><option value="auto">自动选择</option><option value="gpu">GPU 加速</option><option value="blender">Blender</option></select></label><label class="field-label">视频编码<select id="encoder"><option value="auto">自动选择</option><option value="h264_nvenc">NVIDIA NVENC</option><option value="h264_qsv">Intel QSV</option><option value="h264_amf">AMD AMF</option><option value="libx264">CPU H.264</option></select></label></div>
+        <div class="capability-feedback"><button id="detect-capabilities" class="text-button" type="button">检测实际加速 <span>↗</span></button><p id="capability-status" class="field-hint" role="status">工具就绪后自动检测一次。自动模式在硬件不可用时使用软件回退。</p></div>
+        <div class="budget-card"><span class="eyebrow" id="budget-heading">MP4 DELIVERY BUDGET</span><p id="budget-info">目标 480 MB，成片严格小于 500 MB；体积超限自动调整码率，无需重跑画面渲染。</p></div>
+        <p class="export-note" id="export-note">2× 超采样后降采样，画面更细腻，耗时更长。体积按十进制 MB 计算，最终文件小于 500,000,000 字节。</p></div>
+        <button id="render" class="button primary render-button" disabled><span>开始渲染</span><span>↗</span></button><p class="local-assurance">本机离线处理 · 原素材不会被覆盖</p>
+      </section>
+      <section class="panel jobs-panel"><div class="jobs-heading"><h2>渲染任务</h2><span id="job-count">0</span></div><div id="jobs"><div class="jobs-empty"><span>◷</span><p>任务将在这里显示</p><small>完成后可下载成片与查看路径</small></div></div></section>
+      <details class="runtime-info" id="runtime-settings"><summary><span class="runtime-dot"></span> 运行环境与工具设置 <span id="environment-badge">检查中…</span></summary>
+        <div class="environment-settings">
+          <p class="environment-intro">首次使用可自动扫描，或填入工具 exe 路径后保存。仅保存到本项目，不修改系统 PATH 或注册表。</p>
+          <p id="environment-message" class="environment-message" role="status">正在检查工具…</p>
+          <label class="field-label" for="environment-blender">Blender 路径 <a href="https://www.blender.org/download/" target="_blank" rel="noopener noreferrer">官方下载 ↗</a></label>
+          <input id="environment-blender" type="text" list="blender-candidates" placeholder="留空为自动发现，或粘贴 blender.exe 路径" autocomplete="off"><datalist id="blender-candidates"></datalist>
+          <p class="tool-status" id="blender-status"></p><p class="environment-intro">建议 Blender 4.5 LTS，安装后扫描即可，无需编辑 JSON。</p>
+          <label class="field-label" for="environment-ffmpeg">FFmpeg 路径 <a href="https://ffmpeg.org/download.html#build-windows" target="_blank" rel="noopener noreferrer">官方下载入口 ↗</a></label>
+          <input id="environment-ffmpeg" type="text" list="ffmpeg-candidates" placeholder="留空为自动发现，或粘贴 ffmpeg.exe 路径" autocomplete="off"><datalist id="ffmpeg-candidates"></datalist>
+          <p class="tool-status" id="ffmpeg-status"></p><p id="nvenc-status" class="environment-intro"></p>
+          <div class="environment-actions"><button id="environment-scan" class="button compact" type="button">扫描本机</button><button id="environment-save" class="button compact" type="button">验证并保存</button></div>
+          <p class="environment-intro">扫描范围：PATH、常见安装目录、指定注册表键和项目 tools；不会全盘搜索。活动任务期间锁定工具设置。</p>
+          <details class="startup-help"><summary>启动与安装说明</summary><p id="python-help" class="environment-intro"></p><a id="python-download" href="https://www.python.org/downloads/windows/" target="_blank" rel="noopener noreferrer">Python 官方下载 ↗</a></details>
+          <dl><dt>当前 Blender</dt><dd id="blender-path">检查中…</dd><dt>当前 FFmpeg</dt><dd id="ffmpeg-path">检查中…</dd><dt>输出位置</dt><dd id="output-dir">检查中…</dd></dl>
+        </div>
+      </details>
+    </aside>
+  </main>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="replace-dialog"><form method="dialog"><h2>覆盖同名预设？</h2><p>这会更新本项目中同名预设的几何与取景参数。</p><div class="dialog-actions"><button class="button" value="cancel">取消</button><button class="button primary" value="replace">覆盖预设</button></div></form></dialog>
+</body>
+</html>
